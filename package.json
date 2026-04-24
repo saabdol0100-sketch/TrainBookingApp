@@ -1,0 +1,51 @@
+{
+  "name": "trainbookingapp",
+  "version": "1.0.0",
+  "description": "",
+  "license": "ISC",
+  "author": "",
+  "type": "commonjs",
+  "main": "index.js",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "dev": "nodemon index.js",
+    "start": "node index.js",
+    "test": "jest"
+  },
+  "dependencies": {
+    "axios": "^1.15.2",
+    "bcryptjs": "^3.0.3",
+    "compression": "^1.8.1",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "ejs": "^5.0.1",
+    "eslint": "^10.0.3",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.3.2",
+    "google-auth-library": "^10.6.2",
+    "helmet": "^8.1.0",
+    "http-server": "^14.1.1",
+    "joi": "^18.0.2",
+    "jsonwebtoken": "^9.0.3",
+    "mongodb": "^7.1.0",
+    "mongoose": "^9.2.4",
+    "morgan": "^1.10.1",
+    "node-fetch": "^3.3.2",
+    "nodemailer": "^8.0.4",
+    "npm-check-updates": "^19.6.3",
+    "passport": "^0.7.0",
+    "passport-facebook": "^3.0.0",
+    "passport-google-oauth20": "^2.0.0",
+    "qrcode": "^1.5.4",
+    "twilio": "^5.13.1",
+    "uuid": "^14.0.0"
+  },
+  "devDependencies": {
+    "jest": "^30.3.0",
+    "mongodb-memory-server": "^11.0.1",
+    "supertest": "^7.2.2"
+  }
+}
