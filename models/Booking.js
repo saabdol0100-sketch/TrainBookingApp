@@ -52,7 +52,15 @@ const bookingSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
-
+    passenger: {
+      name: { type: String, required: true }, // اسم الراكب
+      middleName: { type: String }, // الاسم الأوسط (اختياري)
+      phone: { type: String }, // رقم الهاتف
+      email: { type: String }, // البريد الإلكتروني
+      nationalId: { type: String }, // الرقم القومي أو جواز السفر
+      nationality: { type: String }, // الجنسية
+      profileType: { type: String }, // نوع الملف (مثلاً: بالغ/طفل)
+    },
     bookingRef: {
       type: String,
       unique: true,

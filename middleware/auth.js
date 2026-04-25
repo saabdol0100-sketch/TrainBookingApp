@@ -48,7 +48,7 @@ const authorizeRole = (roles = []) => {
     }
 
     // ✅ admin bypass
-    if (req.user.role === "admin") return next();
+    // if (req.user.role === "admin") return next();
 
     if (roles.length && !roles.includes(req.user.role)) {
       return res.status(403).json({
@@ -76,9 +76,7 @@ const checkOwner = (paramKey = "id") => {
       });
     }
 
-    // admin bypass
-    if (req.user.role === "admin") return next();
-
+    // ✅ سواء كان user أو admin، لازم يتأكد أن الـ id يخصه هو
     if (req.user.id !== resourceId) {
       return res.status(403).json({
         success: false,

@@ -20,6 +20,13 @@ const sendRes = (res, status, success, msg, data = null) => {
   res.status(status).json({ success, msg, data });
 };
 const otpAttempts = new Map();
+/*
+otpAttempts
+ده مجرد Map في الذاكرة (memory) بيخزن عدد محاولات إدخال OTP لكل مستخدم أو لكل إيميل/رقم.
+
+تقدر تستخدمه عشان تمنع محاولات كثيرة (brute force).
+
+*/
 
 exports.signup = async (req, res) => {
   try {
@@ -100,27 +107,61 @@ exports.signup = async (req, res) => {
     sendRes(res, 500, false, err.message);
   }
 };
+const countryPhoneCodes = {
+  Egypt: "+20",
+  "Saudi Arabia": "+966",
+  USA: "+1",
+  UK: "+44",
+  France: "+33",
+  Germany: "+49",
+  India: "+91",
+  Canada: "+1",
+  UAE: "+971",
+  Qatar: "+974",
+  Kuwait: "+965",
+  Jordan: "+962",
+  Morocco: "+212",
+  Algeria: "+213",
+  Tunisia: "+216",
+};
+
 exports.signupByAdmin = async (req, res) => {
   try {
     const { name, phone, email, password, NationalId, country, role } =
       req.body;
 
-    if (!name || !email || !password || !phone || !NationalId || !role) {
+    if (
+      !name ||
+      !email ||
+      !password ||
+      !phone ||
+      !NationalId ||
+      !role ||
+      !country
+    ) {
       return sendRes(res, 400, false, "Missing required fields");
     }
 
     const normalizedEmail = email.toLowerCase().trim();
 
-    const phoneRegex = /^01[0125][0-9]{8}$/;
-    if (!phoneRegex.test(phone)) {
-      return sendRes(res, 400, false, "Invalid phone number");
+    // ✅ تحقق من الكود الدولي للهاتف حسب الدولة
+    const expectedCode = countryPhoneCodes[country];
+    if (expectedCode && !phone.startsWith(expectedCode)) {
+      return sendRes(
+        res,
+        400,
+        false,
+        `Phone number must start with ${expectedCode} for ${country}`,
+      );
     }
 
+    // ✅ تحقق من الرقم القومي (14 رقم)
     const nationalIdRegex = /^[0-9]{14}$/;
     if (!nationalIdRegex.test(NationalId)) {
       return sendRes(res, 400, false, "Invalid National ID");
     }
 
+    // ✅ تحقق من الدور
     const allowedRoles = ["user", "admin", "commissary"];
     if (!allowedRoles.includes(role.toLowerCase())) {
       return sendRes(res, 400, false, "Invalid role");
@@ -179,6 +220,7 @@ exports.signupByAdmin = async (req, res) => {
     sendRes(res, 500, false, err.message);
   }
 };
+
 exports.resendOTP = async (req, res) => {
   try {
     const { email } = req.body;
@@ -225,7 +267,6 @@ exports.resendOTP = async (req, res) => {
     sendRes(res, 500, false, "Error resending OTP");
   }
 };
-
 // ================= VERIFY OTP =================
 exports.verifyOTP = async (req, res) => {
   try {
@@ -359,7 +400,6 @@ exports.login = async (req, res) => {
     sendRes(res, 500, false, "Login error");
   }
 };
-
 // ================= FORGOT PASSWORD =================
 exports.forgotPassword = async (req, res) => {
   try {
@@ -371,8 +411,12 @@ exports.forgotPassword = async (req, res) => {
 
     const normalizedEmail = email?.toLowerCase().trim();
 
+    // Find user by email or phone
     const user = await User.findOne({
-      $or: [{ email: normalizedEmail }, { phone }],
+      $or: [
+        ...(normalizedEmail ? [{ email: normalizedEmail }] : []),
+        ...(phone ? [{ phone }] : []),
+      ],
     });
 
     if (!user) return sendRes(res, 404, false, "User not found");
@@ -384,6 +428,7 @@ exports.forgotPassword = async (req, res) => {
 
     await user.save();
 
+    // Send OTP via email or SMS depending on what was provided
     await Promise.all([
       normalizedEmail
         ? sendEmail(normalizedEmail, "Reset Password OTP", `OTP: ${otp}`)
@@ -399,7 +444,6 @@ exports.forgotPassword = async (req, res) => {
     sendRes(res, 500, false, err.message);
   }
 };
-
 // ================= RESET PASSWORD =================
 exports.resetPassword = async (req, res) => {
   try {

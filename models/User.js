@@ -106,6 +106,33 @@ const userSchema = new mongoose.Schema(
 
 userSchema.index({ email: 1, phone: 1 });
 
+const countryPhoneCodes = {
+  Egypt: "+20",
+  "Saudi Arabia": "+966",
+  USA: "+1",
+  UK: "+44",
+  France: "+33",
+  Germany: "+49",
+  India: "+91",
+  Canada: "+1",
+  UAE: "+971",
+  Qatar: "+974",
+  Kuwait: "+965",
+  Jordan: "+962",
+  Morocco: "+212",
+  Algeria: "+213",
+  Tunisia: "+216",
+};
+
+userSchema.pre("save", async function () {
+  const expectedCode = countryPhoneCodes[this.country];
+  if (expectedCode && !this.phone.startsWith(expectedCode)) {
+    throw new Error(
+      `Phone number must start with ${expectedCode} for ${this.country}`,
+    );
+  }
+});
+
 userSchema.set("toJSON", {
   transform: function (doc, ret) {
     delete ret.password;

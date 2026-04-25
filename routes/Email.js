@@ -5,7 +5,7 @@ const { authMiddleware, authorizeRole } = require("../middleware/auth");
 router.post(
   "/UserCreate/admin",
   authMiddleware,
-  authorizeRole(["Admin"]),
+  authorizeRole(["admin"]),
   EmailController.signupByAdmin,
 );
 router.post("/signup", EmailController.signup);

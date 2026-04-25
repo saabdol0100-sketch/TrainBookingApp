@@ -3,7 +3,7 @@ const router = express.Router();
 const usersController = require("../controllers/User");
 const { authMiddleware, authorizeRole } = require("../middleware/auth");
 
-const userOnly = [authMiddleware, authorizeRole(["user"])];
+const userOnly = [authMiddleware, authorizeRole(["user", "commissary"])];
 
 router.get("/bookings", ...userOnly, usersController.getMyBooks);
 router.delete("/bookings/:id", ...userOnly, usersController.deleteBookById);

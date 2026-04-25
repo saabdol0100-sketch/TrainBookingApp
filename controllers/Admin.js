@@ -382,7 +382,6 @@ exports.createTrips = async (req, res) => {
     });
   }
 };
-
 exports.createTrip = async (req, res) => {
   let session = null;
 
@@ -764,7 +763,6 @@ exports.getAllTrips = async (req, res) => {
     return send(res, { success: false, msg: err.message, status: 500 });
   }
 };
-
 exports.getAllTrains = async (req, res) => {
   try {
     const trains = await Train.find().lean();
@@ -779,7 +777,6 @@ exports.getAllTrains = async (req, res) => {
     return send(res, { success: false, msg: err.message, status: 500 });
   }
 };
-
 exports.getTrainById = async (req, res) => {
   try {
     const { id } = req.params;
@@ -807,7 +804,6 @@ exports.getTrainById = async (req, res) => {
     return send(res, { success: false, msg: err.message, status: 500 });
   }
 };
-
 exports.getAllStations = async (req, res) => {
   try {
     const stations = await Station.find().lean();
@@ -822,7 +818,6 @@ exports.getAllStations = async (req, res) => {
     return send(res, { success: false, msg: err.message, status: 500 });
   }
 };
-
 exports.getStationById = async (req, res) => {
   try {
     const { id } = req.params;
@@ -878,7 +873,6 @@ exports.getAllUsers = async (req, res) => {
     });
   }
 };
-
 exports.getSeatsByTrainId = async (req, res) => {
   try {
     const { trainId } = req.params;
@@ -908,7 +902,6 @@ exports.getSeatsByTrainId = async (req, res) => {
     });
   }
 };
-
 exports.getSeatsByTripId = async (req, res) => {
   try {
     const { tripId } = req.params;
@@ -965,7 +958,6 @@ exports.updateTripById = async (req, res) => {
     return send(res, { success: false, msg: err.message, status: 500 });
   }
 };
-
 exports.updateTrainById = async (req, res) => {
   try {
     const { id } = req.params;
@@ -992,7 +984,6 @@ exports.updateTrainById = async (req, res) => {
     return send(res, { success: false, msg: err.message, status: 500 });
   }
 };
-
 exports.updateStationById = async (req, res) => {
   try {
     const { id } = req.params;
@@ -1023,7 +1014,6 @@ exports.updateStationById = async (req, res) => {
     return send(res, { success: false, msg: err.message, status: 500 });
   }
 };
-
 exports.updateSeatById = async (req, res) => {
   try {
     const { id } = req.params;
@@ -1079,7 +1069,6 @@ exports.deleteAllTrains = async (req, res) => {
     });
   }
 };
-
 exports.deleteTrainById = async (req, res) => {
   try {
     const { id } = req.params;
@@ -1126,7 +1115,6 @@ exports.deleteTrainById = async (req, res) => {
     });
   }
 };
-
 exports.deleteTrip = async (req, res) => {
   let session = null;
 
@@ -1176,7 +1164,6 @@ exports.deleteTrip = async (req, res) => {
     });
   }
 };
-
 exports.deleteAllTrips = async (req, res) => {
   try {
     if (process.env.NODE_ENV === "production") {
@@ -1194,7 +1181,6 @@ exports.deleteAllTrips = async (req, res) => {
     return send(res, { success: false, msg: err.message, status: 500 });
   }
 };
-
 exports.deleteStationById = async (req, res) => {
   try {
     const { id } = req.params;
@@ -1230,7 +1216,6 @@ exports.deleteStationById = async (req, res) => {
     return send(res, { success: false, msg: err.message, status: 500 });
   }
 };
-
 exports.deleteAllStations = async (req, res) => {
   try {
     if (process.env.NODE_ENV === "production") {
@@ -1248,7 +1233,6 @@ exports.deleteAllStations = async (req, res) => {
     return send(res, { success: false, msg: err.message, status: 500 });
   }
 };
-
 exports.deleteSeatById = async (req, res) => {
   try {
     const { id } = req.params;
@@ -1278,7 +1262,6 @@ exports.deleteSeatById = async (req, res) => {
     return send(res, { success: false, msg: err.message, status: 500 });
   }
 };
-
 exports.deleteUserById = async (req, res) => {
   try {
     const { id } = req.params;

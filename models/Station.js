@@ -9,7 +9,12 @@ const stationSchema = new mongoose.Schema(
       trim: true,
       index: true,
     },
-
+    country: {
+      type: String,
+      required: true,
+      trim: true,
+      index: true,
+    },
     location: {
       type: String,
       trim: true,
