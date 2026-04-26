@@ -41,7 +41,7 @@
     "passport-google-oauth20": "^2.0.0",
     "qrcode": "^1.5.4",
     "twilio": "^5.13.1",
-    "uuid": "^14.0.0"
+    "uuid": "^8.3.2"
   },
   "devDependencies": {
     "jest": "^30.3.0",

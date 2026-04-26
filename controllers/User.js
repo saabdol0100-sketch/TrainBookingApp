@@ -1,3 +1,4 @@
+const crypto = require("crypto");
 const { v4: uuidv4 } = require("uuid");
 const Station = require("../models/Station");
 const Trip = require("../models/Trip");
@@ -87,19 +88,6 @@ exports.searchTrips = async (req, res) => {
     sendRes(res, 500, false, "Error fetching trips");
   }
 };
-exports.getAllStations = async (req, res) => {
-  try {
-    const stations = await Station.find()
-      .sort({ name: 1 })
-      .select("-__v")
-      .lean();
-
-    return sendRes(res, 200, true, "Stations fetched", stations);
-  } catch (err) {
-    console.error("getAllStations:", err);
-    return sendRes(res, 500, false, "Server error");
-  }
-};
 exports.getStationByName = async (req, res) => {
   try {
     const { name } = req.query;
@@ -118,64 +106,6 @@ exports.getStationByName = async (req, res) => {
     return sendRes(res, 200, true, "Stations fetched", stations);
   } catch (err) {
     console.error("getStationByName:", err);
-    return sendRes(res, 500, false, "Server error");
-  }
-};
-exports.searchTrips = async (req, res) => {
-  try {
-    let { from, to, date, page = 1, limit = 10 } = req.query;
-
-    if (!from || !to) {
-      return sendRes(res, 400, false, "from & to required");
-    }
-
-    page = parseInt(page);
-    limit = parseInt(limit);
-
-    if (page < 1) page = 1;
-    if (limit < 1 || limit > 100) limit = 10;
-
-    const query = {
-      fromStation: from,
-      toStation: to,
-    };
-
-    if (date) {
-      const parsedDate = new Date(date);
-
-      if (isNaN(parsedDate.getTime())) {
-        return sendRes(res, 400, false, "Invalid date");
-      }
-
-      const nextDay = new Date(parsedDate);
-      nextDay.setDate(nextDay.getDate() + 1);
-
-      query.departureDate = {
-        $gte: parsedDate,
-        $lt: nextDay,
-      };
-    }
-
-    const skip = (page - 1) * limit;
-
-    const [trips, total] = await Promise.all([
-      Trip.find(query)
-        .populate("train_id fromStation toStation")
-        .sort({ departureDate: 1 })
-        .skip(skip)
-        .limit(limit)
-        .lean(),
-      Trip.countDocuments(query),
-    ]);
-
-    return sendRes(res, 200, true, "Trips fetched", {
-      total,
-      page,
-      pages: Math.ceil(total / limit),
-      trips,
-    });
-  } catch (err) {
-    console.error("searchTrips:", err);
     return sendRes(res, 500, false, "Server error");
   }
 };
