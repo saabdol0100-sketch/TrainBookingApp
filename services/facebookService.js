@@ -1,5 +1,5 @@
-const fetch = require("node-fetch");
-
+const fetch = (...args) =>
+  import("node-fetch").then(({ default: fetch }) => fetch(...args));
 exports.verifyFacebookToken = async (accessToken) => {
   if (!accessToken) throw new Error("Access token required");
 
