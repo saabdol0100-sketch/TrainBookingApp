@@ -5,7 +5,8 @@ const jwt = require("jsonwebtoken");
 const { sendEmail } = require("../services/emailService");
 const crypto = require("crypto");
 const { OAuth2Client } = require("google-auth-library");
-const response = await fetch(url, options);
+const fetch = (...args) =>
+  import("node-fetch").then(({ default: fetch }) => fetch(...args));
 const { verifyGoogleToken } = require("../services/googleService");
 const { verifyFacebookToken } = require("../services/facebookService");
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
