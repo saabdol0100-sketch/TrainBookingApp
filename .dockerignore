@@ -5,3 +5,18 @@ node_modules
 npm-debug.log
 
 dbdump
+Dockerfile
+docker-compose.yml
+
+*.log
+*.txt
+
+.env
+
+*.jpg
+*.jpeg
+*.png
+
+coverage
+dist
+tmp
