@@ -155,21 +155,61 @@ exports.getTripRoute = async (req, res) => {
 };
 exports.getTripByStations = async (req, res) => {
   try {
-    const { from, to } = req.query;
+    const { from, to, startDate, endDate, page = 1, limit = 10 } = req.query;
 
     if (!from || !to) {
       return sendRes(res, 400, false, "from & to required");
     }
 
-    const trips = await Trip.find({
+    // Build query dynamically
+    const query = {
       fromStation: from,
       toStation: to,
-    })
-      .populate("train fromStation toStation")
-      .sort({ departureDate: 1 })
-      .lean();
+    };
 
-    return sendRes(res, 200, true, "Trips fetched", trips);
+    // 🔹 Date range filter
+    if (startDate || endDate) {
+      query.departureDate = {};
+
+      if (startDate) {
+        const start = new Date(startDate);
+        start.setHours(0, 0, 0, 0);
+        query.departureDate.$gte = start;
+      }
+
+      if (endDate) {
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        query.departureDate.$lte = end;
+      }
+    }
+
+    // 🔹 Pagination setup
+    const pageNum = parseInt(page);
+    const limitNum = parseInt(limit);
+    const skip = (pageNum - 1) * limitNum;
+
+    // 🔹 Fetch data
+    const [trips, total] = await Promise.all([
+      Trip.find(query)
+        .populate("train fromStation toStation")
+        .sort({ departureDate: 1 })
+        .skip(skip)
+        .limit(limitNum)
+        .lean(),
+
+      Trip.countDocuments(query),
+    ]);
+
+    return sendRes(res, 200, true, "Trips fetched", {
+      trips,
+      pagination: {
+        total,
+        page: pageNum,
+        limit: limitNum,
+        totalPages: Math.ceil(total / limitNum),
+      },
+    });
   } catch (err) {
     console.error("getTripByStations:", err);
     return sendRes(res, 500, false, "Server error");

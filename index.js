@@ -58,12 +58,22 @@ app.use(express.urlencoded({ extended: true }));
 app.use(morgan("dev"));
 app.use(compression());
 
+const notFound = (req, res, next) => {
+  res.status(404).json({
+    success: false,
+    msg: "Route not found",
+  });
+};
+
+app.get("/api/v1", (req, res) => {
+  res.send("API is running...");
+});
 // Routes
 app.use(`${API_PREFIX}/users`, usersRoutes);
 app.use(`${API_PREFIX}/email`, emailRoutes);
 app.use(`${API_PREFIX}/admin`, adminRoutes);
 app.use(`${API_PREFIX}/commissary`, commissaryRoutes);
-
+app.use(notFound);
 // ENV CHECK
 const requiredEnv = [
   "JWT_SECRET",
@@ -87,9 +97,7 @@ mongoose
   })
   .then(() => {
     console.log("✅ MongoDB connected");
-
     const PORT = process.env.PORT || 3000;
-
     app.listen(PORT, "0.0.0.0", () => {
       console.log(`🚀 Server running on port ${PORT}`);
     });
@@ -99,6 +107,10 @@ mongoose
     process.exit(1);
   });
 
+mongoose.connection.once("open", () => {
+  console.log("Connected DB:", mongoose.connection.name);
+  console.log("Host:", mongoose.connection.host);
+});
 // Cleanup jobs only on primary machine
 if (process.env.IS_PRIMARY === "true") {
   // Cleanup unpaid bookings

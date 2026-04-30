@@ -25,24 +25,6 @@ const userSchema = new mongoose.Schema(
       trim: true,
       index: true,
     },
-
-    NationalId: {
-      type: String,
-      unique: true,
-      sparse: true,
-      trim: true,
-    },
-
-    dateOfBirth: {
-      type: Date,
-      default: null,
-    },
-
-    country: {
-      type: String,
-      trim: true,
-    },
-
     password: {
       type: String,
       minlength: 6,
@@ -100,38 +82,54 @@ const userSchema = new mongoose.Schema(
       enum: ["local", "google", "facebook"],
       default: "local",
     },
+    // NationalId: {
+    //   type: String,
+    //   unique: true,
+    //   sparse: true,
+    //   trim: true,
+    // },
+
+    // dateOfBirth: {
+    //   type: Date,
+    //   default: null,
+    // },
+
+    // country: {
+    //   type: String,
+    //   trim: true,
+    // },
   },
   { timestamps: true },
 );
 
 userSchema.index({ email: 1, phone: 1 });
 
-const countryPhoneCodes = {
-  Egypt: "+20",
-  "Saudi Arabia": "+966",
-  USA: "+1",
-  UK: "+44",
-  France: "+33",
-  Germany: "+49",
-  India: "+91",
-  Canada: "+1",
-  UAE: "+971",
-  Qatar: "+974",
-  Kuwait: "+965",
-  Jordan: "+962",
-  Morocco: "+212",
-  Algeria: "+213",
-  Tunisia: "+216",
-};
+// const countryPhoneCodes = {
+//   Egypt: "+20",
+//   "Saudi Arabia": "+966",
+//   USA: "+1",
+//   UK: "+44",
+//   France: "+33",
+//   Germany: "+49",
+//   India: "+91",
+//   Canada: "+1",
+//   UAE: "+971",
+//   Qatar: "+974",
+//   Kuwait: "+965",
+//   Jordan: "+962",
+//   Morocco: "+212",
+//   Algeria: "+213",
+//   Tunisia: "+216",
+// };
 
-userSchema.pre("save", async function () {
-  const expectedCode = countryPhoneCodes[this.country];
-  if (expectedCode && !this.phone.startsWith(expectedCode)) {
-    throw new Error(
-      `Phone number must start with ${expectedCode} for ${this.country}`,
-    );
-  }
-});
+// userSchema.pre("save", async function () {
+//   const expectedCode = countryPhoneCodes[this.country];
+//   if (expectedCode && !this.phone.startsWith(expectedCode)) {
+//     throw new Error(
+//       `Phone number must start with ${expectedCode} for ${this.country}`,
+//     );
+//   }
+// });
 
 userSchema.set("toJSON", {
   transform: function (doc, ret) {

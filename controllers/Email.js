@@ -28,13 +28,16 @@ otpAttempts
 تقدر تستخدمه عشان تمنع محاولات كثيرة (brute force).
 
 */
-
-exports.signup = async (req, res) => {
+exports.signupByAdmin = async (req, res) => {
   try {
-    const { name, phone, email, password, NationalId, country } = req.body;
+    const { name, email, phone, password, confirmPassword, role } = req.body;
 
-    if (!name || !email || !password || !phone || !NationalId) {
+    if (!name || !email || !phone || !password || !confirmPassword || !role) {
       return sendRes(res, 400, false, "Missing required fields");
+    }
+
+    if (password !== confirmPassword) {
+      return sendRes(res, 400, false, "Passwords do not match");
     }
 
     const normalizedEmail = email.toLowerCase().trim();
@@ -44,184 +47,148 @@ exports.signup = async (req, res) => {
       return sendRes(res, 400, false, "Invalid phone number");
     }
 
-    const nationalIdRegex = /^[0-9]{14}$/;
-    if (!nationalIdRegex.test(NationalId)) {
-      return sendRes(res, 400, false, "Invalid National ID");
-    }
-
-    const dateOfBirth = extractDOBFromNationalId(NationalId);
-
-    const existingUser = await User.findOne({
-      $or: [{ email: normalizedEmail }, { phone }, { NationalId }],
-    });
-
-    if (existingUser && existingUser.isVerified) {
-      return sendRes(res, 400, false, "User already exists");
-    }
-
-    const hashedPassword = await bcrypt.hash(password, 12);
-    const otp = generateOTP();
-
-    const user = await User.findOneAndUpdate(
-      {
-        $or: [{ email: normalizedEmail }, { phone }, { NationalId }],
-      },
-      {
-        name: name.trim(),
-        email: normalizedEmail,
-        phone,
-        role: "user",
-        password: hashedPassword,
-        NationalId,
-        country,
-        dateOfBirth,
-        signupOtp: hashOTP(otp),
-        signupOtpExpires:
-          Date.now() + Number(process.env.OTP_EXPIRES_MINUTES || 5) * 60 * 1000,
-        isVerified: false,
-        oauthProvider: "local",
-      },
-      {
-        upsert: true,
-        returnDocument: "after",
-        setDefaultsOnInsert: true,
-      },
-    );
-
-    // send email only for testing
-    await sendEmail(normalizedEmail, "Verify your account", `OTP: ${otp}`);
-
-    // later use this if Twilio configured
-    // await sendSMS(phone, `Your OTP is ${otp}`);
-
-    sendRes(res, 200, true, "OTP sent successfully", {
-      ...(process.env.NODE_ENV !== "production" && { otp }),
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-      },
-    });
-  } catch (err) {
-    console.log(err);
-    sendRes(res, 500, false, err.message);
-  }
-};
-const countryPhoneCodes = {
-  Egypt: "+20",
-  "Saudi Arabia": "+966",
-  USA: "+1",
-  UK: "+44",
-  France: "+33",
-  Germany: "+49",
-  India: "+91",
-  Canada: "+1",
-  UAE: "+971",
-  Qatar: "+974",
-  Kuwait: "+965",
-  Jordan: "+962",
-  Morocco: "+212",
-  Algeria: "+213",
-  Tunisia: "+216",
-};
-
-exports.signupByAdmin = async (req, res) => {
-  try {
-    const { name, phone, email, password, NationalId, country, role } =
-      req.body;
-
-    if (
-      !name ||
-      !email ||
-      !password ||
-      !phone ||
-      !NationalId ||
-      !role ||
-      !country
-    ) {
-      return sendRes(res, 400, false, "Missing required fields");
-    }
-
-    const normalizedEmail = email.toLowerCase().trim();
-
-    // ✅ تحقق من الكود الدولي للهاتف حسب الدولة
-    const expectedCode = countryPhoneCodes[country];
-    if (expectedCode && !phone.startsWith(expectedCode)) {
-      return sendRes(
-        res,
-        400,
-        false,
-        `Phone number must start with ${expectedCode} for ${country}`,
-      );
-    }
-
-    // ✅ تحقق من الرقم القومي (14 رقم)
-    const nationalIdRegex = /^[0-9]{14}$/;
-    if (!nationalIdRegex.test(NationalId)) {
-      return sendRes(res, 400, false, "Invalid National ID");
-    }
-
-    // ✅ تحقق من الدور
     const allowedRoles = ["user", "admin", "commissary"];
     if (!allowedRoles.includes(role.toLowerCase())) {
       return sendRes(res, 400, false, "Invalid role");
     }
 
-    const dateOfBirth = extractDOBFromNationalId(NationalId);
-
-    const existingUser = await User.findOne({
-      $or: [{ email: normalizedEmail }, { phone }, { NationalId }],
+    let user = await User.findOne({
+      $or: [{ email: normalizedEmail }, { phone }],
     });
 
-    if (existingUser && existingUser.isVerified) {
+    if (user && user.isVerified) {
       return sendRes(res, 400, false, "User already exists");
     }
 
     const hashedPassword = await bcrypt.hash(password, 12);
     const otp = generateOTP();
 
-    const user = await User.findOneAndUpdate(
-      {
-        $or: [{ email: normalizedEmail }, { phone }, { NationalId }],
-      },
-      {
+    if (!user) {
+      user = await User.create({
         name: name.trim(),
         email: normalizedEmail,
         phone,
         role: role.toLowerCase(),
         password: hashedPassword,
-        NationalId,
-        country,
-        dateOfBirth,
         signupOtp: hashOTP(otp),
         signupOtpExpires:
           Date.now() + Number(process.env.OTP_EXPIRES_MINUTES || 5) * 60 * 1000,
         isVerified: false,
         oauthProvider: "local",
-      },
-      {
-        upsert: true,
-        returnDocument: "after",
-        setDefaultsOnInsert: true,
-      },
-    );
+      });
+    } else {
+      user.name = name.trim();
+      user.password = hashedPassword;
+      user.signupOtp = hashOTP(otp);
+      user.signupOtpExpires =
+        Date.now() + Number(process.env.OTP_EXPIRES_MINUTES || 5) * 60 * 1000;
+
+      await user.save();
+    }
 
     await Promise.all([
       sendEmail(normalizedEmail, "Verify your account", `OTP: ${otp}`),
       sendSMS(phone, `Your OTP is ${otp}`),
     ]);
 
-    sendRes(res, 200, true, "OTP sent successfully", {
+    return sendRes(res, 200, true, "OTP sent successfully", {
       ...(process.env.NODE_ENV !== "production" && { otp }),
-      user,
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        role: user.role,
+      },
     });
   } catch (err) {
     console.log(err);
-    sendRes(res, 500, false, err.message);
+    return sendRes(res, 500, false, err.message);
   }
 };
+exports.signup = async (req, res) => {
+  try {
+    const { name, email, phone, password, confirmPassword } = req.body;
 
+    if (!name || !email || !phone || !password || !confirmPassword) {
+      return sendRes(res, 400, false, "Missing required fields");
+    }
+
+    if (password !== confirmPassword) {
+      return sendRes(res, 400, false, "Passwords do not match");
+    }
+
+    const normalizedEmail = email.toLowerCase().trim();
+
+    // 🔹 email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(normalizedEmail)) {
+      return sendRes(res, 400, false, "Invalid email");
+    }
+
+    // 🔹 phone validation
+    const phoneRegex = /^01[0125][0-9]{8}$/;
+    if (!phoneRegex.test(phone)) {
+      return sendRes(res, 400, false, "Invalid phone number");
+    }
+
+    // 🔹 check existing
+    let user = await User.findOne({
+      $or: [{ email: normalizedEmail }, { phone }],
+    });
+
+    if (user && user.isVerified) {
+      return sendRes(res, 400, false, "User already exists");
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 12);
+    const otp = generateOTP();
+
+    if (!user) {
+      // 🔹 create new
+      user = await User.create({
+        name: name.trim(),
+        email: normalizedEmail,
+        phone,
+        role: "user",
+        password: hashedPassword,
+        signupOtp: hashOTP(otp),
+        signupOtpExpires:
+          Date.now() + Number(process.env.OTP_EXPIRES_MINUTES || 5) * 60 * 1000,
+        isVerified: false,
+        oauthProvider: "local",
+      });
+    } else {
+      // 🔹 update existing unverified
+      user.name = name.trim();
+      user.password = hashedPassword;
+      user.signupOtp = hashOTP(otp);
+      user.signupOtpExpires =
+        Date.now() + Number(process.env.OTP_EXPIRES_MINUTES || 5) * 60 * 1000;
+
+      await user.save();
+    }
+
+    await Promise.all([
+      sendEmail(normalizedEmail, "Verify your account", `OTP: ${otp}`),
+      sendSMS(phone, `Your OTP is ${otp}`),
+    ]);
+
+    return sendRes(res, 200, true, "OTP sent successfully", {
+      ...(process.env.NODE_ENV !== "production" && { otp }),
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        role: user.role,
+      },
+    });
+  } catch (err) {
+    console.log(err);
+    return sendRes(res, 500, false, err.message);
+  }
+};
 exports.resendOTP = async (req, res) => {
   try {
     const { email } = req.body;
@@ -231,10 +198,9 @@ exports.resendOTP = async (req, res) => {
     const normalizedEmail = email.toLowerCase().trim();
 
     const user = await User.findOne({ email: normalizedEmail });
-
     if (!user) return sendRes(res, 404, false, "User not found");
 
-    // 30 sec cooldown
+    // 🔹 cooldown (30 sec)
     if (
       user.signupOtpExpires &&
       Date.now() < user.signupOtpExpires - 4.5 * 60 * 1000
@@ -257,15 +223,17 @@ exports.resendOTP = async (req, res) => {
 
     await Promise.all([
       sendEmail(normalizedEmail, "Verify your account", `OTP: ${otp}`),
-      sendSMS(user.phone, `Your OTP is ${otp}`),
+      user.phone
+        ? sendSMS(user.phone, `Your OTP is ${otp}`)
+        : Promise.resolve(),
     ]);
 
-    sendRes(res, 200, true, "OTP resent", {
-      ...(process.env.NODE_ENV !== "production" && { otp }),
+    return sendRes(res, 200, true, "OTP resent", {
+      ...includeOtpIfDev(otp),
     });
   } catch (err) {
     console.log(err);
-    sendRes(res, 500, false, "Error resending OTP");
+    return sendRes(res, 500, false, "Error resending OTP");
   }
 };
 // ================= VERIFY OTP =================
@@ -280,10 +248,10 @@ exports.verifyOTP = async (req, res) => {
     const normalizedEmail = email.toLowerCase().trim();
 
     const user = await User.findOne({ email: normalizedEmail });
-
     if (!user) return sendRes(res, 404, false, "User not found");
 
     const key = normalizedEmail;
+
     if (!otpAttempts.has(key)) otpAttempts.set(key, 0);
 
     if (otpAttempts.get(key) >= 5) {
@@ -303,19 +271,33 @@ exports.verifyOTP = async (req, res) => {
       return sendRes(res, 400, false, "Invalid type");
     }
 
-    if (storedOtp !== hashOTP(String(otp).trim()) || Date.now() > expires) {
+    if (
+      !storedOtp ||
+      storedOtp !== hashOTP(String(otp).trim()) ||
+      Date.now() > expires
+    ) {
       otpAttempts.set(key, otpAttempts.get(key) + 1);
       return sendRes(res, 400, false, "Invalid or expired OTP");
     }
 
+    // ✅ success
     otpAttempts.delete(key);
 
     if (type === "signup") {
       user.isVerified = true;
       user.signupOtp = null;
       user.signupOtpExpires = null;
-      await user.save();
+    }
 
+    if (type === "reset") {
+      user.resetOtp = null;
+      user.resetOtpExpires = null;
+    }
+
+    await user.save();
+
+    // 🔹 signup → return token
+    if (type === "signup") {
       const token = generateToken(user);
 
       return sendRes(res, 200, true, "Account verified", {
@@ -326,13 +308,21 @@ exports.verifyOTP = async (req, res) => {
           email: user.email,
           role: user.role,
         },
+        ...(process.env.NODE_ENV !== "production" && {
+          debug: "OTP verified successfully",
+        }),
       });
     }
 
-    return sendRes(res, 200, true, "OTP valid");
+    // 🔹 reset → just valid
+    return sendRes(res, 200, true, "OTP valid", {
+      ...(process.env.NODE_ENV !== "production" && {
+        debug: "OTP verified successfully",
+      }),
+    });
   } catch (err) {
     console.log(err);
-    sendRes(res, 500, false, err.message);
+    return sendRes(res, 500, false, err.message);
   }
 };
 const loginAttempts = new Map();
@@ -412,7 +402,6 @@ exports.forgotPassword = async (req, res) => {
 
     const normalizedEmail = email?.toLowerCase().trim();
 
-    // Find user by email or phone
     const user = await User.findOne({
       $or: [
         ...(normalizedEmail ? [{ email: normalizedEmail }] : []),
@@ -429,7 +418,6 @@ exports.forgotPassword = async (req, res) => {
 
     await user.save();
 
-    // Send OTP via email or SMS depending on what was provided
     await Promise.all([
       normalizedEmail
         ? sendEmail(normalizedEmail, "Reset Password OTP", `OTP: ${otp}`)
@@ -437,12 +425,12 @@ exports.forgotPassword = async (req, res) => {
       phone ? sendSMS(phone, `Your OTP is ${otp}`) : Promise.resolve(),
     ]);
 
-    sendRes(res, 200, true, "OTP sent", {
-      ...(process.env.NODE_ENV !== "production" && { otp }),
+    return sendRes(res, 200, true, "OTP sent", {
+      ...includeOtpIfDev(otp),
     });
   } catch (err) {
     console.log(err);
-    sendRes(res, 500, false, err.message);
+    return sendRes(res, 500, false, err.message);
   }
 };
 // ================= RESET PASSWORD =================

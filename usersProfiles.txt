@@ -17,7 +17,7 @@
   "password": "comssPass123",
   "NationalId": "30302052603290",
   "country": "italy",
-  "role":"commissary"
+  "role":"commissary" 
 }
 
 
@@ -186,3 +186,51 @@ evdRfWofTA60cqw5
 saabdol0100_db_user
 mongodb+srv://saabdol0100_db_user:evdRfWofTA60cqw5@cluster0.x00r3ba.mongodb.net/?appName=Cluster0
 mongodb+srv://saabdol0100_db_user:evdRfWofTA60cqw5@cluster0.x00r3ba.mongodb.net/?appName=Cluster0
+
+
+============================
+
+{
+  "email": "saabdol0100@gmail.com",
+  
+  "password":"newPassword123"
+
+}
+
+{
+    "success": true,
+    "msg": "Login successful",
+    "data": {
+        "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5ZTQ1OWFkNjc5Y2Q2ZThjNmRkYTZlOCIsInJvbGUiOiJhZG1pbiIsImlhdCI6MTc3NzI0NzMyNiwiZXhwIjoxNzc3ODUyMTI2fQ.JroxEANfgecVXKVn03BdgkPS3LqzNKM5kHNlwVIAzNo",
+        "user": {
+            "id": "69e459ad679cd6e8c6dda6e8",
+            "name": "Sa Abdo",
+            "email": "saabdol0100@gmail.com",
+            "role": "admin"
+        }
+    }
+}
+
+
+===
+{
+  "name": "zeyad ahmed",
+  "email": "zezoo8315@gmail.com",
+  "phone": "01090201849",
+  "password": "12345678",
+  "NationalId": "30302052601194",
+  "country": "Egypt"
+}
+
+{
+    "success": true,
+    "msg": "OTP sent successfully",
+    "data": {
+        "user": {
+            "id": "69f360fcc0888e9af851aac1",
+            "name": "zeyad ahmed",
+            "email": "zezoo8315@gmail.com",
+            "role": "user"
+        }
+    }
+}
