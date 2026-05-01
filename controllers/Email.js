@@ -65,6 +65,13 @@ exports.signupByAdmin = async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, 12);
     const otp = generateOTP();
 
+    const otpData = {
+      otp: hashOTP(otp),
+      otpExpires:
+        Date.now() + Number(process.env.OTP_EXPIRES_MINUTES || 5) * 60 * 1000,
+      otpPurpose: "signup",
+    };
+
     if (!user) {
       user = await User.create({
         name: name.trim(),
@@ -72,19 +79,14 @@ exports.signupByAdmin = async (req, res) => {
         phone,
         role: role.toLowerCase(),
         password: hashedPassword,
-        signupOtp: hashOTP(otp),
-        signupOtpExpires:
-          Date.now() + Number(process.env.OTP_EXPIRES_MINUTES || 5) * 60 * 1000,
+        ...otpData,
         isVerified: false,
         oauthProvider: "local",
       });
     } else {
       user.name = name.trim();
       user.password = hashedPassword;
-      user.signupOtp = hashOTP(otp);
-      user.signupOtpExpires =
-        Date.now() + Number(process.env.OTP_EXPIRES_MINUTES || 5) * 60 * 1000;
-
+      Object.assign(user, otpData);
       await user.save();
     }
 
@@ -122,19 +124,16 @@ exports.signup = async (req, res) => {
 
     const normalizedEmail = email.toLowerCase().trim();
 
-    // 🔹 email validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(normalizedEmail)) {
       return sendRes(res, 400, false, "Invalid email");
     }
 
-    // 🔹 phone validation
     const phoneRegex = /^01[0125][0-9]{8}$/;
     if (!phoneRegex.test(phone)) {
       return sendRes(res, 400, false, "Invalid phone number");
     }
 
-    // 🔹 check existing
     let user = await User.findOne({
       $or: [{ email: normalizedEmail }, { phone }],
     });
@@ -146,28 +145,28 @@ exports.signup = async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, 12);
     const otp = generateOTP();
 
+    const otpData = {
+      otp: hashOTP(otp),
+      otpExpires:
+        Date.now() + Number(process.env.OTP_EXPIRES_MINUTES || 5) * 60 * 1000,
+      otpPurpose: "signup",
+    };
+
     if (!user) {
-      // 🔹 create new
       user = await User.create({
         name: name.trim(),
         email: normalizedEmail,
         phone,
         role: "user",
         password: hashedPassword,
-        signupOtp: hashOTP(otp),
-        signupOtpExpires:
-          Date.now() + Number(process.env.OTP_EXPIRES_MINUTES || 5) * 60 * 1000,
+        ...otpData,
         isVerified: false,
         oauthProvider: "local",
       });
     } else {
-      // 🔹 update existing unverified
       user.name = name.trim();
       user.password = hashedPassword;
-      user.signupOtp = hashOTP(otp);
-      user.signupOtpExpires =
-        Date.now() + Number(process.env.OTP_EXPIRES_MINUTES || 5) * 60 * 1000;
-
+      Object.assign(user, otpData);
       await user.save();
     }
 
@@ -203,10 +202,7 @@ exports.resendOTP = async (req, res) => {
     if (!user) return sendRes(res, 404, false, "User not found");
 
     // 🔹 cooldown (30 sec)
-    if (
-      user.signupOtpExpires &&
-      Date.now() < user.signupOtpExpires - 4.5 * 60 * 1000
-    ) {
+    if (user.otpExpires && Date.now() < user.otpExpires - 4.5 * 60 * 1000) {
       return sendRes(
         res,
         429,
@@ -217,9 +213,10 @@ exports.resendOTP = async (req, res) => {
 
     const otp = generateOTP();
 
-    user.signupOtp = hashOTP(otp);
-    user.signupOtpExpires =
+    user.otp = hashOTP(otp);
+    user.otpExpires =
       Date.now() + Number(process.env.OTP_EXPIRES_MINUTES || 5) * 60 * 1000;
+    user.otpPurpose = "signup"; // 👈 important
 
     await user.save();
 
@@ -259,23 +256,12 @@ exports.verifyOTP = async (req, res) => {
       return sendRes(res, 429, false, "Too many wrong OTP attempts");
     }
 
-    let storedOtp;
-    let expires;
-
-    if (type === "signup") {
-      storedOtp = user.signupOtp;
-      expires = user.signupOtpExpires;
-    } else if (type === "reset") {
-      storedOtp = user.resetOtp;
-      expires = user.resetOtpExpires;
-    } else {
-      return sendRes(res, 400, false, "Invalid type");
-    }
-
+    // 🔥 unified validation
     if (
-      !storedOtp ||
-      storedOtp !== hashOTP(String(otp).trim()) ||
-      Date.now() > expires
+      !user.otp ||
+      user.otp !== hashOTP(String(otp).trim()) ||
+      Date.now() > user.otpExpires ||
+      user.otpPurpose !== type
     ) {
       otpAttempts.set(key, otpAttempts.get(key) + 1);
       return sendRes(res, 400, false, "Invalid or expired OTP");
@@ -286,14 +272,12 @@ exports.verifyOTP = async (req, res) => {
 
     if (type === "signup") {
       user.isVerified = true;
-      user.signupOtp = null;
-      user.signupOtpExpires = null;
     }
 
-    if (type === "reset") {
-      user.resetOtp = null;
-      user.resetOtpExpires = null;
-    }
+    // 🔥 clear OTP after success
+    user.otp = null;
+    user.otpExpires = null;
+    user.otpPurpose = null;
 
     await user.save();
 
@@ -415,8 +399,11 @@ exports.forgotPassword = async (req, res) => {
 
     const otp = String(generateOTP());
 
-    user.resetOtp = hashOTP(otp);
-    user.resetOtpExpires = Date.now() + 5 * 60 * 1000;
+    // ✅ NEW unified OTP system
+    user.otp = hashOTP(otp);
+    user.otpExpires =
+      Date.now() + Number(process.env.OTP_EXPIRES_MINUTES || 5) * 60 * 1000;
+    user.otpPurpose = "reset"; // 👈 VERY IMPORTANT
 
     await user.save();
 
@@ -443,36 +430,46 @@ exports.resetPassword = async (req, res) => {
       return sendRes(res, 400, false, "Missing required fields");
     }
 
-    const normalizedEmail = email?.toLowerCase().trim();
+    const normalizedEmail = email?.toLowerCase()?.trim();
 
     const user = await User.findOne({
-      $or: [{ email: normalizedEmail }, { phone }],
+      $or: [
+        ...(normalizedEmail ? [{ email: normalizedEmail }] : []),
+        ...(phone ? [{ phone }] : []),
+      ],
     });
 
     if (!user) return sendRes(res, 404, false, "User not found");
 
+    // ✅ unified OTP validation
     if (
-      user.resetOtp !== hashOTP(String(otp).trim()) ||
-      Date.now() > user.resetOtpExpires
+      !user.otp ||
+      user.otp !== hashOTP(String(otp).trim()) ||
+      Date.now() > user.otpExpires ||
+      user.otpPurpose !== "reset"
     ) {
       return sendRes(res, 400, false, "Invalid or expired OTP");
     }
 
-    // password validation
+    // 🔒 password validation
     if (newPassword.length < 8) {
       return sendRes(res, 400, false, "Password must be at least 8 characters");
     }
 
+    // 🔐 update password
     user.password = await bcrypt.hash(newPassword, 12);
-    user.resetOtp = null;
-    user.resetOtpExpires = null;
+
+    // 🔥 clear OTP after use
+    user.otp = null;
+    user.otpExpires = null;
+    user.otpPurpose = null;
 
     await user.save();
 
-    sendRes(res, 200, true, "Password reset successful");
+    return sendRes(res, 200, true, "Password reset successful");
   } catch (err) {
     console.log(err);
-    sendRes(res, 500, false, "Reset failed");
+    return sendRes(res, 500, false, "Reset failed");
   }
 };
 exports.loginWithGoogle = async (req, res) => {
@@ -536,13 +533,15 @@ exports.loginWithFacebook = async (req, res) => {
       return sendRes(res, 400, false, "Invalid Facebook account");
     }
 
-    let user = await User.findOne({ email: profile.email });
+    const normalizedEmail = profile.email.toLowerCase().trim();
+
+    let user = await User.findOne({ email: normalizedEmail });
 
     if (!user) {
       user = await User.create({
         name: profile.name,
-        email: profile.email.toLowerCase().trim(),
-        role: "User",
+        email: normalizedEmail,
+        role: "user", // ✅ fixed
         oauthProvider: "facebook",
         isVerified: true,
         isActive: true,
@@ -555,7 +554,7 @@ exports.loginWithFacebook = async (req, res) => {
 
     const appToken = generateToken(user);
 
-    sendRes(res, 200, true, "Facebook login success", {
+    return sendRes(res, 200, true, "Facebook login success", {
       token: appToken,
       user: {
         id: user._id,
@@ -566,7 +565,7 @@ exports.loginWithFacebook = async (req, res) => {
     });
   } catch (err) {
     console.log(err);
-    sendRes(res, 500, false, "Facebook login failed");
+    return sendRes(res, 500, false, "Facebook login failed");
   }
 };
 exports.getAccount = async (req, res) => {
@@ -576,17 +575,17 @@ exports.getAccount = async (req, res) => {
     }
 
     const user = await User.findById(req.user.id).select(
-      "-password -signupOtp -resetOtp",
+      "-password -otp -otpExpires -otpPurpose",
     );
 
     if (!user) {
       return sendRes(res, 404, false, "User not found");
     }
 
-    sendRes(res, 200, true, "Account fetched", user);
+    return sendRes(res, 200, true, "Account fetched", user);
   } catch (err) {
     console.log(err);
-    sendRes(res, 500, false, "Error fetching account");
+    return sendRes(res, 500, false, "Error fetching account");
   }
 };
 exports.updateAccount = async (req, res) => {
@@ -612,8 +611,10 @@ exports.updateAccount = async (req, res) => {
 
     const updateData = {};
 
+    // 🔹 name
     if (name) updateData.name = name.trim();
 
+    // 🔹 email
     if (email) {
       const normalizedEmail = email.toLowerCase().trim();
 
@@ -624,11 +625,13 @@ exports.updateAccount = async (req, res) => {
       }
 
       updateData.email = normalizedEmail;
-      updateData.isVerified = false; // force reverify on email change
+      updateData.isVerified = false; // force reverify
     }
 
+    // 🔹 phone
     if (phone) {
       const phoneRegex = /^01[0125][0-9]{8}$/;
+
       if (!phoneRegex.test(phone)) {
         return sendRes(res, 400, false, "Invalid phone number");
       }
@@ -642,8 +645,10 @@ exports.updateAccount = async (req, res) => {
       updateData.phone = phone;
     }
 
+    // 🔹 national id
     if (NationalId) {
       const nationalIdRegex = /^[0-9]{14}$/;
+
       if (!nationalIdRegex.test(NationalId)) {
         return sendRes(res, 400, false, "Invalid National ID");
       }
@@ -658,13 +663,15 @@ exports.updateAccount = async (req, res) => {
       updateData.dateOfBirth = extractDOBFromNationalId(NationalId);
     }
 
+    // 🔹 country
     if (country) updateData.country = country;
 
-    // prevent self role escalation
+    // 🔒 prevent role escalation
     if (role) {
       return sendRes(res, 403, false, "Role cannot be updated here");
     }
 
+    // 🔐 password
     if (password) {
       if (password.length < 8) {
         return sendRes(
@@ -681,28 +688,34 @@ exports.updateAccount = async (req, res) => {
     const user = await User.findByIdAndUpdate(userId, updateData, {
       new: true,
       runValidators: true,
-    }).select("-password -signupOtp -resetOtp");
+    }).select("-password -otp -otpExpires -otpPurpose");
 
-    sendRes(res, 200, true, "Account updated", user);
+    return sendRes(res, 200, true, "Account updated", user);
   } catch (err) {
     console.log(err);
-    sendRes(res, 500, false, "Error updating account");
+    return sendRes(res, 500, false, "Error updating account");
   }
 };
 exports.deleteAccount = async (req, res) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user?.id;
 
-    if (!userId) return sendRes(res, 401, false, "Unauthorized");
+    if (!userId) {
+      return sendRes(res, 401, false, "Unauthorized");
+    }
 
     const user = await User.findById(userId);
 
-    if (!user) return sendRes(res, 404, false, "User not found");
+    if (!user) {
+      return sendRes(res, 404, false, "User not found");
+    }
 
-    if (user.role === "Admin") {
+    // 🔒 prevent deleting admins
+    if (user.role === "admin") {
       return sendRes(res, 403, false, "Admin account cannot be deleted");
     }
 
+    // 🔒 check active bookings
     const hasBookings = await Booking.exists({
       user_id: userId,
       status: "active",
@@ -717,16 +730,22 @@ exports.deleteAccount = async (req, res) => {
       );
     }
 
-    // soft delete better for production
+    // 🔥 soft delete (production-safe)
     user.isActive = false;
     user.email = `deleted_${Date.now()}_${user.email}`;
     user.phone = null;
+
+    // 🔥 clear sensitive data
+    user.otp = null;
+    user.otpExpires = null;
+    user.otpPurpose = null;
+
     await user.save();
 
-    sendRes(res, 200, true, "Account deleted successfully");
+    return sendRes(res, 200, true, "Account deleted successfully");
   } catch (err) {
     console.log(err);
-    sendRes(res, 500, false, "Error deleting account");
+    return sendRes(res, 500, false, "Error deleting account");
   }
 };
 //----------------------
