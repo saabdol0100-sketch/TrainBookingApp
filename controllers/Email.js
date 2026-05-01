@@ -29,7 +29,6 @@ const includeOtpIfDev = (otp) => {
   }
   return {};
 };
-
 exports.signupByAdmin = async (req, res) => {
   try {
     const { name, email, phone, password, confirmPassword, role } = req.body;
@@ -124,21 +123,11 @@ exports.signup = async (req, res) => {
 
     const normalizedEmail = email.toLowerCase().trim();
 
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(normalizedEmail)) {
-      return sendRes(res, 400, false, "Invalid email");
-    }
-
-    const phoneRegex = /^01[0125][0-9]{8}$/;
-    if (!phoneRegex.test(phone)) {
-      return sendRes(res, 400, false, "Invalid phone number");
-    }
-
-    let user = await User.findOne({
+    const userExists = await User.findOne({
       $or: [{ email: normalizedEmail }, { phone }],
     });
 
-    if (user && user.isVerified) {
+    if (userExists && userExists.isVerified) {
       return sendRes(res, 400, false, "User already exists");
     }
 
@@ -147,46 +136,36 @@ exports.signup = async (req, res) => {
 
     const otpData = {
       otp: hashOTP(otp),
-      otpExpires:
-        Date.now() + Number(process.env.OTP_EXPIRES_MINUTES || 5) * 60 * 1000,
+      otpExpires: Date.now() + 5 * 60 * 1000,
       otpPurpose: "signup",
     };
 
-    if (!user) {
+    let user;
+
+    if (!userExists) {
       user = await User.create({
-        name: name.trim(),
+        name,
         email: normalizedEmail,
         phone,
-        role: "user",
         password: hashedPassword,
+        role: "user",
         ...otpData,
         isVerified: false,
-        oauthProvider: "local",
       });
     } else {
-      user.name = name.trim();
-      user.password = hashedPassword;
-      Object.assign(user, otpData);
-      await user.save();
+      userExists.name = name;
+      userExists.password = hashedPassword;
+      Object.assign(userExists, otpData);
+      await userExists.save();
+      user = userExists;
     }
 
-    await Promise.all([
-      sendEmail(normalizedEmail, "Verify your account", `OTP: ${otp}`),
-      sendSMS(phone, `Your OTP is ${otp}`),
-    ]);
+    await sendEmail(normalizedEmail, "OTP", `OTP: ${otp}`);
 
-    return sendRes(res, 200, true, "OTP sent successfully", {
-      ...(process.env.NODE_ENV !== "production" && { otp }),
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        phone: user.phone,
-        role: user.role,
-      },
+    return sendRes(res, 200, true, "OTP sent", {
+      ...includeOtpIfDev(otp),
     });
   } catch (err) {
-    console.log(err);
     return sendRes(res, 500, false, err.message);
   }
 };
@@ -194,69 +173,45 @@ exports.resendOTP = async (req, res) => {
   try {
     const { email } = req.body;
 
-    if (!email) return sendRes(res, 400, false, "Email required");
-
-    const normalizedEmail = email.toLowerCase().trim();
-
-    const user = await User.findOne({ email: normalizedEmail });
+    const user = await User.findOne({ email: email.toLowerCase().trim() });
     if (!user) return sendRes(res, 404, false, "User not found");
 
-    // 🔹 cooldown (30 sec)
+    // cooldown 30s
     if (user.otpExpires && Date.now() < user.otpExpires - 4.5 * 60 * 1000) {
-      return sendRes(
-        res,
-        429,
-        false,
-        "Wait 30 seconds before requesting new OTP",
-      );
+      return sendRes(res, 429, false, "Wait 30 seconds");
     }
 
     const otp = generateOTP();
 
     user.otp = hashOTP(otp);
-    user.otpExpires =
-      Date.now() + Number(process.env.OTP_EXPIRES_MINUTES || 5) * 60 * 1000;
-    user.otpPurpose = "signup"; // 👈 important
+    user.otpExpires = Date.now() + 5 * 60 * 1000;
 
     await user.save();
 
-    await Promise.all([
-      sendEmail(normalizedEmail, "Verify your account", `OTP: ${otp}`),
-      user.phone
-        ? sendSMS(user.phone, `Your OTP is ${otp}`)
-        : Promise.resolve(),
-    ]);
+    await sendEmail(user.email, "OTP", `OTP: ${otp}`);
 
     return sendRes(res, 200, true, "OTP resent", {
       ...includeOtpIfDev(otp),
     });
   } catch (err) {
-    console.log(err);
-    return sendRes(res, 500, false, "Error resending OTP");
+    return sendRes(res, 500, false, err.message);
   }
 };
 exports.verifyOTP = async (req, res) => {
   try {
     const { email, otp, type } = req.body;
 
-    if (!email || !otp || !type) {
-      return sendRes(res, 400, false, "Missing required fields");
-    }
-
-    const normalizedEmail = email.toLowerCase().trim();
-
-    const user = await User.findOne({ email: normalizedEmail });
+    const user = await User.findOne({ email: email.toLowerCase().trim() });
     if (!user) return sendRes(res, 404, false, "User not found");
 
-    const key = normalizedEmail;
+    const key = email;
 
     if (!otpAttempts.has(key)) otpAttempts.set(key, 0);
 
     if (otpAttempts.get(key) >= 5) {
-      return sendRes(res, 429, false, "Too many wrong OTP attempts");
+      return sendRes(res, 429, false, "Too many attempts");
     }
 
-    // 🔥 unified validation
     if (
       !user.otp ||
       user.otp !== hashOTP(String(otp).trim()) ||
@@ -267,206 +222,121 @@ exports.verifyOTP = async (req, res) => {
       return sendRes(res, 400, false, "Invalid or expired OTP");
     }
 
-    // ✅ success
     otpAttempts.delete(key);
 
     if (type === "signup") {
       user.isVerified = true;
     }
 
+    if (type === "reset") {
+      user.isOtpVerified = true; // 🔥 important
+    }
+
     await user.save();
 
-    // 🔹 signup → return token
     if (type === "signup") {
-      const token = generateToken(user);
-
       return sendRes(res, 200, true, "Account verified", {
-        token,
-        user: {
-          id: user._id,
-          name: user.name,
-          email: user.email,
-          role: user.role,
-        },
-        ...(process.env.NODE_ENV !== "production" && {
-          debug: "OTP verified successfully",
-        }),
+        token: generateToken(user),
       });
     }
 
-    // 🔹 reset → just valid
-    return sendRes(res, 200, true, "OTP valid", {
-      ...(process.env.NODE_ENV !== "production" && {
-        debug: "OTP verified successfully",
-      }),
-    });
+    return sendRes(res, 200, true, "OTP verified");
   } catch (err) {
-    console.log(err);
     return sendRes(res, 500, false, err.message);
   }
 };
-
-const loginAttempts = new Map();
-
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    if (!email || !password) {
-      return sendRes(res, 400, false, "Missing credentials");
-    }
-
     const normalizedEmail = email.toLowerCase().trim();
 
-    // brute force protection
     if (!loginAttempts.has(normalizedEmail)) {
-      loginAttempts.set(normalizedEmail, { count: 0, lockUntil: null });
+      loginAttempts.set(normalizedEmail, { count: 0 });
     }
 
     const attempt = loginAttempts.get(normalizedEmail);
 
-    if (attempt.lockUntil && Date.now() < attempt.lockUntil) {
-      return sendRes(res, 429, false, "Too many attempts. Try later");
-    }
-
     const user = await User.findOne({ email: normalizedEmail });
 
-    if (!user) return sendRes(res, 400, false, "Invalid credentials");
-
-    if (!user.isVerified) {
-      return sendRes(res, 403, false, "Email not verified");
-    }
-
-    if (!user.isActive) {
-      return sendRes(res, 403, false, "Account disabled");
-    }
-
-    const match = await bcrypt.compare(password, user.password);
-
-    if (!match) {
-      attempt.count += 1;
-
+    if (!user || !(await bcrypt.compare(password, user.password))) {
+      attempt.count++;
       if (attempt.count >= 5) {
-        attempt.lockUntil = Date.now() + 15 * 60 * 1000;
+        return sendRes(res, 429, false, "Too many attempts");
       }
-
-      loginAttempts.set(normalizedEmail, attempt);
-
       return sendRes(res, 400, false, "Invalid credentials");
     }
 
     loginAttempts.delete(normalizedEmail);
 
-    const token = generateToken(user);
+    if (!user.isVerified) {
+      return sendRes(res, 403, false, "Verify email first");
+    }
 
-    sendRes(res, 200, true, "Login successful", {
-      token,
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-      },
+    return sendRes(res, 200, true, "Login success", {
+      token: generateToken(user),
     });
   } catch (err) {
-    console.log(err);
-    sendRes(res, 500, false, "Login error");
+    return sendRes(res, 500, false, err.message);
   }
 };
 exports.forgotPassword = async (req, res) => {
   try {
-    const { email, phone } = req.body;
+    const { email } = req.body;
 
-    if (!email && !phone) {
-      return sendRes(res, 400, false, "Email or phone required");
-    }
-
-    const normalizedEmail = email?.toLowerCase()?.trim();
-
-    const user = await User.findOne({
-      $or: [
-        ...(normalizedEmail ? [{ email: normalizedEmail }] : []),
-        ...(phone ? [{ phone }] : []),
-      ],
-    });
-
+    const user = await User.findOne({ email: email.toLowerCase().trim() });
     if (!user) return sendRes(res, 404, false, "User not found");
 
-    const otp = String(generateOTP());
+    const otp = generateOTP();
 
-    // ✅ NEW unified OTP system
     user.otp = hashOTP(otp);
-    user.otpExpires =
-      Date.now() + Number(process.env.OTP_EXPIRES_MINUTES || 5) * 60 * 1000;
-    user.otpPurpose = "reset"; // 👈 VERY IMPORTANT
+    user.otpExpires = Date.now() + 5 * 60 * 1000;
+    user.otpPurpose = "reset";
+    user.isOtpVerified = false;
 
     await user.save();
 
-    await Promise.all([
-      normalizedEmail
-        ? sendEmail(normalizedEmail, "Reset Password OTP", `OTP: ${otp}`)
-        : Promise.resolve(),
-      phone ? sendSMS(phone, `Your OTP is ${otp}`) : Promise.resolve(),
-    ]);
+    await sendEmail(user.email, "Reset OTP", `OTP: ${otp}`);
 
     return sendRes(res, 200, true, "OTP sent", {
       ...includeOtpIfDev(otp),
     });
   } catch (err) {
-    console.log(err);
     return sendRes(res, 500, false, err.message);
   }
 };
 exports.resetPassword = async (req, res) => {
   try {
-    const { email, phone, otp, newPassword } = req.body;
+    const { email, newPassword } = req.body;
 
-    if ((!email && !phone) || !otp || !newPassword) {
-      return sendRes(res, 400, false, "Missing required fields");
-    }
-
-    const normalizedEmail = email?.toLowerCase()?.trim();
-
-    const user = await User.findOne({
-      $or: [
-        ...(normalizedEmail ? [{ email: normalizedEmail }] : []),
-        ...(phone ? [{ phone }] : []),
-      ],
-    });
-
+    const user = await User.findOne({ email: email.toLowerCase().trim() });
     if (!user) return sendRes(res, 404, false, "User not found");
 
-    // ✅ unified OTP validation
-    if (
-      !user.otp ||
-      user.otp !== hashOTP(String(otp).trim()) ||
-      Date.now() > user.otpExpires ||
-      user.otpPurpose !== "reset"
-    ) {
-      return sendRes(res, 400, false, "Invalid or expired OTP");
+    // 🔥 ONLY CHECK THIS
+    if (!user.isOtpVerified) {
+      return sendRes(res, 400, false, "OTP not verified");
     }
 
-    // 🔒 password validation
     if (newPassword.length < 8) {
-      return sendRes(res, 400, false, "Password must be at least 8 characters");
+      return sendRes(res, 400, false, "Password too short");
     }
 
-    // 🔐 update password
     user.password = await bcrypt.hash(newPassword, 12);
 
-    // 🔥 clear OTP after use
+    // clear everything
     user.otp = null;
     user.otpExpires = null;
     user.otpPurpose = null;
+    user.isOtpVerified = false;
 
     await user.save();
 
     return sendRes(res, 200, true, "Password reset successful");
   } catch (err) {
-    console.log(err);
-    return sendRes(res, 500, false, "Reset failed");
+    return sendRes(res, 500, false, err.message);
   }
 };
+const loginAttempts = new Map();
 exports.loginWithGoogle = async (req, res) => {
   try {
     const { token } = req.body;
