@@ -17,17 +17,12 @@ const {
   hashOTP,
   extractDOBFromNationalId,
 } = require("../utils/authHelpers");
+
 const sendRes = (res, status, success, msg, data = null) => {
   res.status(status).json({ success, msg, data });
 };
 const otpAttempts = new Map();
-/*
-otpAttempts
-ده مجرد Map في الذاكرة (memory) بيخزن عدد محاولات إدخال OTP لكل مستخدم أو لكل إيميل/رقم.
 
-تقدر تستخدمه عشان تمنع محاولات كثيرة (brute force).
-
-*/
 exports.signupByAdmin = async (req, res) => {
   try {
     const { name, email, phone, password, confirmPassword, role } = req.body;
@@ -236,7 +231,6 @@ exports.resendOTP = async (req, res) => {
     return sendRes(res, 500, false, "Error resending OTP");
   }
 };
-// ================= VERIFY OTP =================
 exports.verifyOTP = async (req, res) => {
   try {
     const { email, otp, type } = req.body;
@@ -325,7 +319,9 @@ exports.verifyOTP = async (req, res) => {
     return sendRes(res, 500, false, err.message);
   }
 };
+
 const loginAttempts = new Map();
+
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -391,7 +387,6 @@ exports.login = async (req, res) => {
     sendRes(res, 500, false, "Login error");
   }
 };
-// ================= FORGOT PASSWORD =================
 exports.forgotPassword = async (req, res) => {
   try {
     const { email, phone } = req.body;
@@ -400,7 +395,7 @@ exports.forgotPassword = async (req, res) => {
       return sendRes(res, 400, false, "Email or phone required");
     }
 
-    const normalizedEmail = email?.toLowerCase().trim();
+    const normalizedEmail = email?.toLowerCase()?.trim();
 
     const user = await User.findOne({
       $or: [
@@ -433,7 +428,6 @@ exports.forgotPassword = async (req, res) => {
     return sendRes(res, 500, false, err.message);
   }
 };
-// ================= RESET PASSWORD =================
 exports.resetPassword = async (req, res) => {
   try {
     const { email, phone, otp, newPassword } = req.body;
@@ -474,7 +468,6 @@ exports.resetPassword = async (req, res) => {
     sendRes(res, 500, false, "Reset failed");
   }
 };
-// ================= LOGIN WITH GOOGLE =================
 exports.loginWithGoogle = async (req, res) => {
   try {
     const { token } = req.body;
@@ -522,8 +515,6 @@ exports.loginWithGoogle = async (req, res) => {
     sendRes(res, 500, false, "Google login failed");
   }
 };
-
-// ================= LOGIN WITH FACEBOOK =================
 exports.loginWithFacebook = async (req, res) => {
   try {
     const { accessToken } = req.body;
@@ -591,7 +582,6 @@ exports.getAccount = async (req, res) => {
     sendRes(res, 500, false, "Error fetching account");
   }
 };
-// ================= UPDATE ACCOUNT =================
 exports.updateAccount = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -692,8 +682,6 @@ exports.updateAccount = async (req, res) => {
     sendRes(res, 500, false, "Error updating account");
   }
 };
-
-// ================= DELETE ACCOUNT =================
 exports.deleteAccount = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -734,7 +722,6 @@ exports.deleteAccount = async (req, res) => {
     sendRes(res, 500, false, "Error deleting account");
   }
 };
-
 //----------------------
 //! NumberOfMethods :- 11
 //----------------------

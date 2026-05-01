@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const { v4: uuidv4 } = require("uuid");
 
 const bookingSchema = new mongoose.Schema(
   {
@@ -71,14 +72,9 @@ const bookingSchema = new mongoose.Schema(
 );
 
 bookingSchema.index({ seat: 1, trip: 1 }, { unique: true });
-
 bookingSchema.pre("save", function () {
   if (!this.bookingRef) {
-    this.bookingRef =
-      "BK-" +
-      Date.now().toString().slice(-6) +
-      "-" +
-      Math.floor(Math.random() * 1000);
+    this.bookingRef = "BK-" + uuidv4();
   }
 });
 
@@ -88,5 +84,5 @@ bookingSchema.set("toJSON", {
     return ret;
   },
 });
-
+// todo  auto-generated + safe + production-ready booking reference .
 module.exports = mongoose.model("Booking", bookingSchema);

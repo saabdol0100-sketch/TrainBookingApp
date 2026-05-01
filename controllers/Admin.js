@@ -30,7 +30,6 @@ const send = (
   });
 };
 
-console.log(typeof send);
 // ===== Create =====
 exports.createStations = async (req, res) => {
   try {

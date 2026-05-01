@@ -10,6 +10,8 @@ const extractToken = (req) => {
   return parts[1];
 };
 
+//? ExtractToken = gets JWT from Authorization header safely
+
 const authMiddleware = (req, res, next) => {
   try {
     if (!process.env.JWT_SECRET) {
@@ -46,10 +48,6 @@ const authorizeRole = (roles = []) => {
     if (!req.user) {
       return res.status(401).json({ success: false, msg: "Unauthorized" });
     }
-
-    // ✅ admin bypass
-    // if (req.user.role === "admin") return next();
-
     if (roles.length && !roles.includes(req.user.role)) {
       return res.status(403).json({
         success: false,
@@ -76,7 +74,6 @@ const checkOwner = (paramKey = "id") => {
       });
     }
 
-    // ✅ سواء كان user أو admin، لازم يتأكد أن الـ id يخصه هو
     if (req.user.id !== resourceId) {
       return res.status(403).json({
         success: false,

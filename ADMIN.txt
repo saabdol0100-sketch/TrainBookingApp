@@ -1,0 +1,12 @@
+https://trainbookingapp.fly.dev/api/v1/admin
+
+https://trainbookingapp.fly.dev/api/v1/admin/stations{
+  "stations": [
+    {
+      "name": "Cairo",
+      "location": "Cairo City",
+      "coordinates": [31.2357, 30.0444],
+      "status": "active"
+    }
+  ]
+}

@@ -1,0 +1,135 @@
+
+General link 
+
+https://trainbookingapp.fly.dev/
+-------------------------------------------------------------
+POST 
+
+https://trainbookingapp.fly.dev/api/v1/email/signup
+
+{
+  "name": "",
+  "email": "",
+  "phone": "",
+  "password": "",
+  "confirmPassword": ""
+}
+
+
+POST 
+
+https://trainbookingapp.fly.dev/api/v1/email/verifyOTP
+
+{
+  "email": "",
+  "otp": "",
+  "type": "signup"
+}
+
+
+POST
+https://trainbookingapp.fly.dev/api/v1/email/resend-otp
+
+{
+  "email": ""
+}
+
+POST
+https://trainbookingapp.fly.dev/api/v1/email/login
+
+{
+  "email": "",
+  "password": ""
+}
+
+
+POST 
+https://trainbookingapp.fly.dev/api/v1/email/forgot-password
+
+{
+  "email": ""
+}
+
+OR 
+
+{
+  "phone": ""
+}
+
+
+POST 
+
+https://trainbookingapp.fly.dev/api/v1/email/verifyOTP
+
+{
+  "email": "",
+  "otp": "",
+  "type": "reset"
+}
+
+
+POST
+https://trainbookingapp.fly.dev/api/v1/email/reset-password
+
+{
+  "email": "",
+  "otp": "",
+  "newPassword": ""
+}
+
+
+============SOON==================
+
+POST 
+https://trainbookingapp.fly.dev/api/v1/email/login/google
+{
+  "token": "GOOGLE_ID_TOKEN"
+}
+
+
+POST 
+https://trainbookingapp.fly.dev/api/v1/email/login/facebook
+{
+  "accessToken": "FACEBOOK_ACCESS_TOKEN"
+}
+
+
+
+👤 ACCOUNT (requires token)
+
+GET 
+https://trainbookingapp.fly.dev/api/v1/email/account
+
+IN headers add to authonticaiton this Bearer token      وده اللي بيرجعلك لما تسجل دخول وتأكد من وجود مسافة بين التوكن وكلمة 
+
+Authorization: Bearer TOKEN
+
+
+PUT 
+https://trainbookingapp.fly.dev/api/v1/email/account
+
+{
+  "name": "User",
+  "email": "user@test.com",
+  "phone": "01012345678",
+  "password": "12345678",
+  "confirmPassword": "12345678",
+  "role": "user"
+}
+
+
+DELETE 
+https://trainbookingapp.fly.dev/api/v1/email/account
+
+
+
+ADMIN 
+https://trainbookingapp.fly.dev/api/v1/email/UserCreate/admin
+{
+  "name": "User",
+  "email": "user@test.com",
+  "phone": "01012345678",
+  "password": "12345678",
+  "confirmPassword": "12345678",
+  "role": "user"
+}
