@@ -23,6 +23,13 @@ const sendRes = (res, status, success, msg, data = null) => {
 };
 const otpAttempts = new Map();
 
+const includeOtpIfDev = (otp) => {
+  if (process.env.NODE_ENV === "development") {
+    return { otp };
+  }
+  return {};
+};
+
 exports.signupByAdmin = async (req, res) => {
   try {
     const { name, email, phone, password, confirmPassword, role } = req.body;
