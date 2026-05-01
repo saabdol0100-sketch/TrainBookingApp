@@ -229,7 +229,7 @@ exports.verifyOTP = async (req, res) => {
     }
 
     if (type === "reset") {
-      user.isOtpVerified = true; // 🔥 important
+      user.isVerified = true; // 🔥 important
     }
 
     await user.save();
@@ -292,7 +292,7 @@ exports.forgotPassword = async (req, res) => {
     user.otp = hashOTP(otp);
     user.otpExpires = Date.now() + 5 * 60 * 1000;
     user.otpPurpose = "reset";
-    user.isOtpVerified = false;
+    user.isVerified = false;
 
     await user.save();
 
@@ -313,7 +313,7 @@ exports.resetPassword = async (req, res) => {
     if (!user) return sendRes(res, 404, false, "User not found");
 
     // 🔥 ONLY CHECK THIS
-    if (!user.isOtpVerified) {
+    if (!user.isVerified) {
       return sendRes(res, 400, false, "OTP not verified");
     }
 
@@ -327,7 +327,7 @@ exports.resetPassword = async (req, res) => {
     user.otp = null;
     user.otpExpires = null;
     user.otpPurpose = null;
-    user.isOtpVerified = false;
+    user.isVerified = false;
 
     await user.save();
 
