@@ -274,11 +274,6 @@ exports.verifyOTP = async (req, res) => {
       user.isVerified = true;
     }
 
-    // 🔥 clear OTP after success
-    user.otp = null;
-    user.otpExpires = null;
-    user.otpPurpose = null;
-
     await user.save();
 
     // 🔹 signup → return token
