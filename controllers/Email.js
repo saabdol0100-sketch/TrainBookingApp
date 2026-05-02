@@ -106,10 +106,10 @@ exports.signupByAdmin = async (req, res) => {
       },
     });
   } catch (err) {
-    console.log(err);
     return sendRes(res, 500, false, err.message);
   }
 };
+
 exports.signup = async (req, res) => {
   try {
     const { name, email, phone, password, confirmPassword } = req.body;
@@ -171,14 +171,18 @@ exports.signup = async (req, res) => {
     return sendRes(res, 500, false, err.message);
   }
 };
+
 exports.resendOTP = async (req, res) => {
   try {
-    const { email } = req.body;
+    const { email, type } = req.body;
+
+    if (!type || !["signup", "reset"].includes(type)) {
+      return sendRes(res, 400, false, "Invalid OTP type");
+    }
 
     const user = await User.findOne({ email: email.toLowerCase().trim() });
     if (!user) return sendRes(res, 404, false, "User not found");
 
-    // cooldown 30s
     if (user.otpExpires && Date.now() < user.otpExpires - 4.5 * 60 * 1000) {
       return sendRes(res, 429, false, "Wait 30 seconds");
     }
@@ -187,6 +191,7 @@ exports.resendOTP = async (req, res) => {
 
     user.otp = hashOTP(otp);
     user.otpExpires = Date.now() + 5 * 60 * 1000;
+    user.otpPurpose = type;
 
     await user.save();
 
@@ -199,6 +204,7 @@ exports.resendOTP = async (req, res) => {
     return sendRes(res, 500, false, err.message);
   }
 };
+
 exports.verifyOTP = async (req, res) => {
   try {
     const { email, otp, type } = req.body;
@@ -230,6 +236,10 @@ exports.verifyOTP = async (req, res) => {
       user.isVerified = true;
     }
 
+    user.otp = null;
+    user.otpExpires = null;
+    user.otpPurpose = null;
+
     await user.save();
 
     if (type === "signup") {
@@ -243,6 +253,7 @@ exports.verifyOTP = async (req, res) => {
     return sendRes(res, 500, false, err.message);
   }
 };
+
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -278,6 +289,7 @@ exports.login = async (req, res) => {
     return sendRes(res, 500, false, err.message);
   }
 };
+
 exports.forgotPassword = async (req, res) => {
   try {
     const { email } = req.body;
@@ -302,6 +314,7 @@ exports.forgotPassword = async (req, res) => {
     return sendRes(res, 500, false, err.message);
   }
 };
+
 exports.resetPassword = async (req, res) => {
   try {
     const { email, newPassword } = req.body;
@@ -309,7 +322,7 @@ exports.resetPassword = async (req, res) => {
     const user = await User.findOne({ email: email.toLowerCase().trim() });
     if (!user) return sendRes(res, 404, false, "User not found");
 
-    if (user.otpPurpose !== "reset") {
+    if (!user.otp || user.otpPurpose !== "reset") {
       return sendRes(res, 400, false, "OTP not verified");
     }
 
