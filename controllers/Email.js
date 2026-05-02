@@ -22,7 +22,7 @@ const sendRes = (res, status, success, msg, data = null) => {
 };
 
 const includeOtpIfDev = (otp) =>
-  process.env.NODE_ENV === "development" ? { otp } : {};
+  process.env.NODE_ENV === "production" ? { otp } : {};
 
 const loginAttempts = new Map();
 const otpAttempts = new Map();
