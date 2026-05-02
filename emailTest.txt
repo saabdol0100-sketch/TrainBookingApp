@@ -340,14 +340,14 @@ Body:
     "success": true,
     "msg": "Login success",
     "data": {
-        "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5ZjYzZjVmNjIzZWIwYTI3YjE2OWM4YiIsInJvbGUiOiJ1c2VyIiwiaWF0IjoxNzc3NzQ1ODQ5LCJleHAiOjE3NzgzNTA2NDl9.QA5xazMtebpXkAJu0cNIvqT2_2t-QPmsrwcq520_nyw"
+        "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5ZjYzZjVmNjIzZWIwYTI3YjE2OWM4YiIsInJvbGUiOiJ1c2VyIiwiaWF0IjoxNzc3NzYyNTYzLCJleHAiOjE3NzgzNjczNjN9.0oE1Kr-Cx3oOuOJHZH5hax3U8Xi6TfZMPIOVc-e0Rng"
     }
 }
 ==============================================
 
 {
   "email": "saabdol0100@gmail.com",
-  "password": "admin123"
+  "password": "newPassword"
 }
 {
     "success": true,

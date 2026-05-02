@@ -458,14 +458,22 @@ exports.confirmPayment = async (req, res) => {
       throw new Error("Seats no longer available");
     }
 
-    // 🎟️ create booking
+    // 🎟️ create booking with extended passenger info
     const booking = await Booking.create(
       [
         {
           user: req.user.id,
           trip: seats[0].trip,
           seats: seatIds,
-          passengers,
+          passengers: passengers.map((p) => ({
+            fullName: p.fullName,
+            middleName: p.middleName,
+            phoneNumber: p.phoneNumber,
+            nationalId: p.nationalId,
+            profileType: p.profileType,
+            email: p.email,
+            nationality: p.nationality,
+          })),
           paymentStatus: "paid",
           transactionId,
           paidAt: now,
@@ -489,7 +497,7 @@ exports.confirmPayment = async (req, res) => {
       $push: { history: booking[0]._id },
     });
 
-    // 📧 send ticket email
+    // 📧 send ticket email (يمكنك تضمين الحقول الجديدة هنا لو عايز)
     await sendTicketEmail(req.user.email, {
       userName: req.user.name,
       trainNumber: seats[0].trainNumber,
@@ -515,6 +523,7 @@ exports.confirmPayment = async (req, res) => {
     return sendRes(res, 500, false, err.message);
   }
 };
+
 exports.getMyBooks = async (req, res) => {
   try {
     const bookings = await Booking.find({ user: req.user.id })
