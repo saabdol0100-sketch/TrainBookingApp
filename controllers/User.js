@@ -56,13 +56,25 @@ exports.searchTrips = async (req, res) => {
       };
     }
 
+    // 🔍 البحث بالاسم (Case-insensitive)
+    const fromStation = await Station.findOne({
+      name: new RegExp("^" + from + "$", "i"),
+    });
+    const toStation = await Station.findOne({
+      name: new RegExp("^" + to + "$", "i"),
+    });
+
+    if (!fromStation || !toStation) {
+      return sendRes(res, 404, false, "Stations not found");
+    }
+
     // 🔥 SINGLE AGGREGATION with pagination + count
     const result = await Trip.aggregate([
       {
         $match: {
-          fromStation: new mongoose.Types.ObjectId(from),
-          toStation: new mongoose.Types.ObjectId(to),
-          status: "scheduled", // ✅ important fix
+          fromStation: fromStation._id,
+          toStation: toStation._id,
+          status: "scheduled",
           ...dateMatch,
         },
       },
@@ -103,7 +115,6 @@ exports.searchTrips = async (req, res) => {
         },
       },
 
-      // ✅ filter only when classType exists
       ...(classFilter.length
         ? [
             {
@@ -114,7 +125,7 @@ exports.searchTrips = async (req, res) => {
           ]
         : []),
 
-      // 🔗 train lookup (FIXED)
+      // 🔗 train lookup
       {
         $lookup: {
           from: "trains",
@@ -146,7 +157,6 @@ exports.searchTrips = async (req, res) => {
       },
       { $unwind: "$toStation" },
 
-      // 🔥 pagination + total count
       {
         $facet: {
           data: [
@@ -162,14 +172,12 @@ exports.searchTrips = async (req, res) => {
     const trips = result[0].data;
     const total = result[0].totalCount[0]?.count || 0;
 
-    // ✅ format time
     const formatTime = (d) =>
       new Date(d).toLocaleTimeString("en-US", {
         hour: "2-digit",
         minute: "2-digit",
       });
 
-    // ✅ format response
     const formattedTrips = trips.map((trip) => {
       const stats = trip.seatStats || { total: 0, available: 0 };
 
@@ -181,22 +189,15 @@ exports.searchTrips = async (req, res) => {
 
       return {
         tripId: trip._id,
-
         trainNumber: trip.train?.number,
         trainType: trip.train?.type || "VIP",
-
         from: trip.fromStation?.name,
         to: trip.toStation?.name,
-
         departureTime: formatTime(trip.departureDate),
         arrivalTime: formatTime(trip.arrivalDate),
-
         duration: `${hours}h ${minutes}m`,
-
         price: trip.price || 350,
-
         availableTickets: stats.available,
-
         stops: trip.stops?.length || 0,
       };
     });
@@ -249,6 +250,22 @@ exports.getTripRoute = async (req, res) => {
     });
   } catch (err) {
     return sendRes(res, 500, false, "Server error");
+  }
+};
+exports.getAllStations = async (req, res) => {
+  try {
+    const stations = await Station.find().select("_id name");
+    return res.status(200).json({
+      success: true,
+      msg: "Stations fetched successfully",
+      data: stations,
+    });
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      msg: "Server error",
+      error: err.message,
+    });
   }
 };
 exports.getSeatsByTrip = async (req, res) => {
@@ -466,6 +483,23 @@ exports.confirmPayment = async (req, res) => {
 
     booking[0].qrCode = await QRCode.toDataURL(qrToken);
     await booking[0].save({ session });
+
+    // 🗂️ add booking to user history
+    await User.findByIdAndUpdate(req.user.id, {
+      $push: { history: booking[0]._id },
+    });
+
+    // 📧 send ticket email
+    await sendTicketEmail(req.user.email, {
+      userName: req.user.name,
+      trainNumber: seats[0].trainNumber,
+      fromStation: seats[0].fromStation,
+      toStation: seats[0].toStation,
+      seatNumbers: seats.map((s) => s.seat_number),
+      date: seats[0].tripDate,
+      price: totalPrice,
+      qrCode: booking[0].qrCode,
+    });
 
     await session.commitTransaction();
     session.endSession();

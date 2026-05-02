@@ -8,6 +8,7 @@ router.post(
   authorizeRole(["admin"]),
   EmailController.signupByAdmin,
 );
+
 router.post("/signup", EmailController.signup);
 router.post("/verifyOTP", EmailController.verifyOTP);
 router.post("/resend-otp", EmailController.resendOTP);

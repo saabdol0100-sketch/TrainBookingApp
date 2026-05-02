@@ -146,10 +146,7 @@ exports.createStations = async (req, res) => {
               normalizedName,
               location: s.location?.trim() || "",
               coordinates: validCoords
-                ? {
-                    type: "Point",
-                    coordinates: s.coordinates,
-                  }
+                ? { type: "Point", coordinates: s.coordinates }
                 : undefined,
               status: s.status || "active",
             },
@@ -169,10 +166,15 @@ exports.createStations = async (req, res) => {
 
     const result = await Station.bulkWrite(ops);
 
+    // رجّع المحطات نفسها بعد التعديل
+    const names = stations.map((s) => s.name.trim());
+    const updatedStations = await Station.find({ name: { $in: names } });
+
     return send(res, {
       success: true,
       msg: "Stations upserted",
       count: result.upsertedCount + result.modifiedCount,
+      data: updatedStations,
     });
   } catch (err) {
     return send(res, {
@@ -182,6 +184,7 @@ exports.createStations = async (req, res) => {
     });
   }
 };
+
 exports.createStation = async (req, res) => {
   try {
     const { name, location, coordinates, status } = req.body;

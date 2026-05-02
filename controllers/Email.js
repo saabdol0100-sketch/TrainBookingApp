@@ -215,23 +215,25 @@ exports.verifyOTP = async (req, res) => {
     const user = await User.findOne({ email: normalizedEmail });
     if (!user) return sendRes(res, 404, false, "User not found");
 
-    const hashed = hashOTP(otp);
-    if (
-      !user.otp ||
-      !compareOTP(user.otp, hashed) ||
-      Date.now() > user.otpExpires ||
-      user.otpPurpose !== type
-    ) {
+    // تحقق من الـ OTP باستخدام bcrypt
+    const isOtpValid =
+      user.otp &&
+      (await bcrypt.compare(otp, user.otp)) &&
+      Date.now() <= user.otpExpires &&
+      user.otpPurpose === type;
+
+    if (!isOtpValid) {
       return sendRes(res, 400, false, "Invalid or expired OTP");
     }
 
     if (type === "signup") {
       user.isVerified = true;
+      // امسح الـ OTP بعد التحقق من signup فقط
+      user.otp = null;
+      user.otpExpires = null;
+      user.otpPurpose = null;
     }
 
-    user.otp = null;
-    user.otpExpires = null;
-    user.otpPurpose = null;
     await user.save();
 
     return sendRes(res, 200, true, "OTP verified", {
@@ -290,44 +292,47 @@ exports.login = async (req, res) => {
 exports.forgotPassword = async (req, res) => {
   try {
     const { email } = req.body;
-
     const normalizedEmail = email.toLowerCase().trim();
 
     const user = await User.findOne({ email: normalizedEmail });
     if (!user) return sendRes(res, 404, false, "User not found");
 
-    const otp = generateOTP();
+    // توليد OTP عشوائي
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
 
-    user.otp = hashOTP(otp);
-    user.otpExpires = Date.now() + 5 * 60 * 1000; // 5 minutes
+    // تخزينه كـ hash
+    user.otp = await bcrypt.hash(otp, 12);
+    user.otpExpires = Date.now() + 5 * 60 * 1000; // صالح 5 دقائق
     user.otpPurpose = "reset";
-
     await user.save();
 
-    await sendEmail(user.email, "Reset OTP", `OTP: ${otp}`);
+    // إرسال الإيميل
+    await sendEmail(user.email, "Reset OTP", `Your OTP code is: ${otp}`);
 
     return sendRes(res, 200, true, "OTP sent", {
-      ...includeOtpIfDev(otp),
+      ...includeOtpIfDev(otp), // يظهر الـ OTP في الرد لو بيئة تطوير
     });
   } catch (err) {
     return sendRes(res, 500, false, err.message);
   }
 };
+
 exports.resetPassword = async (req, res) => {
   try {
     const { email, otp, newPassword } = req.body;
-
     const normalizedEmail = email.toLowerCase().trim();
-    const user = await User.findOne({ email: normalizedEmail });
 
+    const user = await User.findOne({ email: normalizedEmail });
     if (!user) return sendRes(res, 404, false, "User not found");
 
-    if (
-      !user.otp ||
-      !(await bcrypt.compare(otp, user.otp)) || // ✅ المقارنة الصح
-      Date.now() > user.otpExpires ||
-      user.otpPurpose !== "reset"
-    ) {
+    // تحقق من الـ OTP
+    const isOtpValid =
+      user.otp &&
+      (await bcrypt.compare(otp, user.otp)) &&
+      Date.now() <= user.otpExpires &&
+      user.otpPurpose === "reset";
+
+    if (!isOtpValid) {
       return sendRes(res, 400, false, "Invalid or expired OTP");
     }
 
@@ -335,13 +340,13 @@ exports.resetPassword = async (req, res) => {
       return sendRes(res, 400, false, "Password must be at least 8 characters");
     }
 
+    // تحديث كلمة السر
     user.password = await bcrypt.hash(newPassword, 12);
 
-    // clear OTP
+    // مسح الـ OTP بعد الاستخدام
     user.otp = null;
     user.otpExpires = null;
     user.otpPurpose = null;
-
     await user.save();
 
     return sendRes(res, 200, true, "Password reset successful");

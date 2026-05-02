@@ -8,17 +8,21 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-exports.sendEmail = async (to, subject, text) => {
+// دالة عامة لإرسال الإيميل
+exports.sendEmail = async (to, subject, text, attachments = []) => {
   try {
-    return await transporter.sendMail({
+    const info = await transporter.sendMail({
       from: process.env.EMAIL_USER,
       to,
       subject,
       text,
+      attachments, // تقدر تبعت QR code أو PDF هنا
     });
+
+    console.log("Email sent:", info.response);
+    return info;
   } catch (err) {
     console.error("Email error:", err.message);
     throw err;
-    console.log(info);
   }
 };

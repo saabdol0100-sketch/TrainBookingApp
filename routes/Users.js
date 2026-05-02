@@ -6,7 +6,9 @@ const { authMiddleware, authorizeRole } = require("../middleware/auth");
 const userOnly = [authMiddleware, authorizeRole(["user", "commissary"])];
 
 router.get("/trips/search", ...userOnly, usersController.searchTrips);
+
 router.get("/trips/:tripId/route", ...userOnly, usersController.getTripRoute);
+router.get("/stations", ...userOnly, usersController.getAllStations);
 router.get("/trips/:tripId/seats", ...userOnly, usersController.getSeatsByTrip);
 router.post("/seats/:seatId/hold", ...userOnly, usersController.holdSeat);
 

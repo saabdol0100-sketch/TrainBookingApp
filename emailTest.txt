@@ -3,139 +3,289 @@ General link
 
 https://trainbookingapp.fly.dev/
 -------------------------------------------------------------
-POST 
 
+=========================
+ API ENDPOINTS DOCUMENTATION
+=========================
+
++++++++++++++++++++++
+USER CRUD 
++++++++++++++++++++++
+
+------------------------------------------------[1]
+
+(GET)   
+https://trainbookingapp.fly.dev/users/trips/search?from=<stationId>to=<stationId>date=YYYY-MM-DDpage=1limit=10 classType=VIP
+
+----------------------------------------------------[2]
+
+(GET)
+ https://trainbookingapp.fly.dev/api/v1/users/trips/69ea7650c2277ffb0258ecd2/seats?classType=vip
+
+Authorization: Bearer <user_token>
+
+Query: classType (optional)
+----------------------------------------------------[3]
+
+(POST) 
+
+https://trainbookingapp.fly.dev/api/v1/users/seats/:seatId/hold
+
+Headers: Authorization: Bearer <token>
+
+-----------------------------------------------------[4]
+
+(POST)  
+
+ https://trainbookingapp.fly.dev/api/v1/users/bookings/pay
+
+Body:
+{
+  "seatIds": ["<seatId1>", "<seatId2>"],
+  "passengers": [
+    { "name": "Saleh Ahmed", "nationalId": "29804151234567" },
+    { "name": "Kamal Abdol", "nationalId": "29804151234568" }
+  ],
+  "transactionId": "1234567890"
+}
+
+------------------------------------------------[5]
+(GET)   
+
+ https://trainbookingapp.fly.dev/api/v1/users/bookings
+
+Headers: Authorization: Bearer <token>
+------------------------------------------------[6]
+(DELETE) 
+
+ https://trainbookingapp.fly.dev/api/v1/users/bookings/:id
+
+------------------------------------------------[7]
+
+(GET)   
+
+ https://trainbookingapp.fly.dev/api/v1/users/trips/:tripId/route
+
+==============================================================================
+
++++++++++++++++
+ EMAIL
++++++++++++++++
+
+------------------------------------------------[1]
+
+(POST)  
 https://trainbookingapp.fly.dev/api/v1/email/signup
 
+Body:
 {
-  "name": "",
-  "email": "",
-  "phone": "",
-  "password": "",
-  "confirmPassword": ""
+  "name":"Saleh",
+  "email":"saleh@example.com",
+  "phone":"01012345678",
+  "password":"password123",
+  "confirmPassword":"password123"
 }
 
+------------------------------------------------[2]
 
-POST 
-
+(POST)  
 https://trainbookingapp.fly.dev/api/v1/email/verifyOTP
 
+Body:
 {
-  "email": "",
-  "otp": "",
-  "type": "signup"
+  "email":"saleh@example.com",
+  "otp":"473222",
+  "type":"signup"
 }
 
+------------------------------------------------[3]
 
-POST
+(POST)  
 https://trainbookingapp.fly.dev/api/v1/email/resend-otp
 
+Body:
 {
-  "email": ""
+  "email":"saleh@example.com",
+  "type":"reset"
 }
 
-POST
+------------------------------------------------[4]
+
+(POST)  
 https://trainbookingapp.fly.dev/api/v1/email/login
 
+Body:
 {
-  "email": "",
-  "password": ""
+  "email":"saleh@example.com",
+  "password":"password123"
 }
 
+------------------------------------------------[5]
 
-POST 
+(POST)  
 https://trainbookingapp.fly.dev/api/v1/email/forgot-password
 
+Body:
 {
-  "email": ""
+  "email":"saleh@example.com"
 }
 
-OR 
+------------------------------------------------[6]
 
-{
-  "phone": ""
-}
-
-
-POST 
-
-https://trainbookingapp.fly.dev/api/v1/email/verifyOTP
-
-{
-  "email": "",
-  "otp": "",
-  "type": "reset"
-}
-
-
-POST
+(POST)  
 https://trainbookingapp.fly.dev/api/v1/email/reset-password
 
+Body:
 {
-  "email": "",
-  "otp": "",
-  "newPassword": ""
+  "email":"saleh@example.com",
+  "otp":"473222",
+  "newPassword":"newPassword123"
 }
 
+------------------------------------------------[7]
 
-============SOON==================
-
-POST 
-https://trainbookingapp.fly.dev/api/v1/email/login/google
-{
-  "token": "GOOGLE_ID_TOKEN"
-}
-
-
-POST 
-https://trainbookingapp.fly.dev/api/v1/email/login/facebook
-{
-  "accessToken": "FACEBOOK_ACCESS_TOKEN"
-}
-
-
-
-👤 ACCOUNT (requires token)
-
-GET 
+(GET)  
 https://trainbookingapp.fly.dev/api/v1/email/account
 
-IN headers add to authonticaiton this Bearer token      وده اللي بيرجعلك لما تسجل دخول وتأكد من وجود مسافة بين التوكن وكلمة 
+Headers: Authorization: Bearer <token>
 
-Authorization: Bearer TOKEN
+------------------------------------------------[8]
 
-
-PUT 
+(PUT)  
 https://trainbookingapp.fly.dev/api/v1/email/account
 
+Body:
 {
-  "name": "User",
-  "email": "user@test.com",
-  "phone": "01012345678",
-  "password": "12345678",
-  "confirmPassword": "12345678",
-  "role": "user"
+  "name":"Saleh Updated",
+  "phone":"01098765432"
 }
 
+------------------------------------------------[9]
 
-DELETE 
+(DELETE)  
 https://trainbookingapp.fly.dev/api/v1/email/account
 
+Headers: Authorization: Bearer <token>
 
+=========================================================================
 
-ADMIN 
-https://trainbookingapp.fly.dev/api/v1/email/UserCreate/admin
++++++++++++++++++++++
+ ADMIN 
++++++++++++++++++++++
+
+------------------------------------------------[1]
+
+(POST)  
+https://trainbookingapp.fly.dev/api/v1/admin/train
+
+Body:
 {
-  "name": "User",
-  "email": "user@test.com",
-  "phone": "01012345678",
-  "password": "12345678",
-  "confirmPassword": "12345678",
-  "role": "user"
+  "number":1001,
+  "name":"VIP Express 1",
+  "type":"vip",
+  "classes":{"VIP":20,"First":40,"Second":100}
 }
 
+------------------------------------------------[2]
 
+(POST)  
+https://trainbookingapp.fly.dev/api/v1/admin/trip
 
+Body:
+{
+  "train":"<trainId>",
+  "fromStation":"<stationId>",
+  "toStation":"<stationId>",
+  "departureDate":"2026-05-10T08:00:00.000Z",
+  "arrivalDate":"2026-05-10T12:00:00.000Z",
+  "price":150
+}
+
+------------------------------------------------[3]
+
+(GET)  
+https://trainbookingapp.fly.dev/api/v1/admin/trips
+
+------------------------------------------------[4]
+
+(GET)  
+https://trainbookingapp.fly.dev/api/v1/admin/trip/:id
+
+------------------------------------------------[5]
+
+(PUT)  
+https://trainbookingapp.fly.dev/api/v1/admin/trip/:id
+
+------------------------------------------------[6]
+
+(DELETE)  
+https://trainbookingapp.fly.dev/api/v1/admin/trip/:id
+
+------------------------------------------------[7]
+
+(GET)  
+https://trainbookingapp.fly.dev/api/v1/admin/trains
+
+------------------------------------------------[8]
+
+(GET)  
+https://trainbookingapp.fly.dev/api/v1/admin/train/:id
+
+------------------------------------------------[9]
+
+(PUT)  
+https://trainbookingapp.fly.dev/api/v1/admin/train/:id
+
+------------------------------------------------[10]
+
+(DELETE)  
+https://trainbookingapp.fly.dev/api/v1/admin/train/:id
+
+------------------------------------------------[11]
+
+(GET)  
+https://trainbookingapp.fly.dev/api/v1/admin/stations
+
+------------------------------------------------[12]
+
+(GET)  
+https://trainbookingapp.fly.dev/api/v1/admin/station/:id
+
+------------------------------------------------[13]
+
+(PUT)  
+https://trainbookingapp.fly.dev/api/v1/admin/station/:id
+
+------------------------------------------------[14]
+
+(DELETE)  
+https://trainbookingapp.fly.dev/api/v1/admin/station/:id
+
+------------------------------------------------[15]
+
+(GET)  
+https://trainbookingapp.fly.dev/api/v1/admin/users
+
+------------------------------------------------[16]
+
+(DELETE)  
+https://trainbookingapp.fly.dev/api/v1/admin/users/:id
+
+=================================================================
+
++++++++++++++++++++++
+ COMMISSARY 
++++++++++++++++++++++
+
+------------------------------------------------[1]
+
+(POST)  
+https://trainbookingapp.fly.dev/api/v1/commissary/verify-qr
+
+Body:
+{
+  "qrCode":"<qrTokenFromBooking>"
+}
 
 ================================================================E.GS 
 {
@@ -191,5 +341,18 @@ https://trainbookingapp.fly.dev/api/v1/email/UserCreate/admin
     "msg": "Login success",
     "data": {
         "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5ZjYzZjVmNjIzZWIwYTI3YjE2OWM4YiIsInJvbGUiOiJ1c2VyIiwiaWF0IjoxNzc3NzQ1ODQ5LCJleHAiOjE3NzgzNTA2NDl9.QA5xazMtebpXkAJu0cNIvqT2_2t-QPmsrwcq520_nyw"
+    }
+}
+==============================================
+
+{
+  "email": "saabdol0100@gmail.com",
+  "password": "admin123"
+}
+{
+    "success": true,
+    "msg": "Login success",
+    "data": {
+        "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5ZTQ1OWFkNjc5Y2Q2ZThjNmRkYTZlOCIsInJvbGUiOiJhZG1pbiIsImlhdCI6MTc3Nzc1ODgwOCwiZXhwIjoxNzc4MzYzNjA4fQ.D3ycUAjiDNhSCMiOwd6SG1dxff3r--aYkTOyaNzspSk"
     }
 }

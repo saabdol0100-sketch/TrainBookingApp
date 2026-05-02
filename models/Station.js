@@ -31,6 +31,7 @@ const stationSchema = new mongoose.Schema(
         required: true,
       },
     },
+    normalizedName: { type: String, index: true }, // 👈 أضف ده
 
     status: {
       type: String,
