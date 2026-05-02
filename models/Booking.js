@@ -10,19 +10,34 @@ const bookingSchema = new mongoose.Schema(
       index: true,
     },
 
-    seat: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Seat",
-      required: true,
-      index: true,
-    },
-
     trip: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Trip",
       required: true,
       index: true,
     },
+
+    // ✅ MULTI SEATS
+    seats: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Seat",
+        required: true,
+      },
+    ],
+
+    // ✅ MULTI PASSENGERS
+    passengers: [
+      {
+        name: { type: String, required: true },
+        middleName: String,
+        phone: String,
+        email: String,
+        nationalId: String,
+        nationality: String,
+        profileType: String,
+      },
+    ],
 
     paymentStatus: {
       type: String,
@@ -38,10 +53,7 @@ const bookingSchema = new mongoose.Schema(
       index: true,
     },
 
-    qrCode: {
-      type: String,
-      default: null,
-    },
+    qrCode: String,
 
     used: {
       type: Boolean,
@@ -49,40 +61,31 @@ const bookingSchema = new mongoose.Schema(
       index: true,
     },
 
-    usedAt: {
-      type: Date,
-      default: null,
-    },
-    passenger: {
-      name: { type: String, required: true }, // اسم الراكب
-      middleName: { type: String }, // الاسم الأوسط (اختياري)
-      phone: { type: String }, // رقم الهاتف
-      email: { type: String }, // البريد الإلكتروني
-      nationalId: { type: String }, // الرقم القومي أو جواز السفر
-      nationality: { type: String }, // الجنسية
-      profileType: { type: String }, // نوع الملف (مثلاً: بالغ/طفل)
-    },
+    usedAt: Date,
+
     bookingRef: {
       type: String,
       unique: true,
+      index: true,
+    },
+
+    transactionId: {
+      type: String,
+      unique: true, // 🔥 prevents duplicate payment usage
       sparse: true,
     },
+
+    paidAt: Date,
   },
   { timestamps: true },
 );
 
-bookingSchema.index({ seat: 1, trip: 1 }, { unique: true });
+// 🔥 IMPORTANT: NO unique index on seats array
+
 bookingSchema.pre("save", function () {
   if (!this.bookingRef) {
     this.bookingRef = "BK-" + uuidv4();
   }
 });
 
-bookingSchema.set("toJSON", {
-  transform: function (doc, ret) {
-    delete ret.__v;
-    return ret;
-  },
-});
-// todo  auto-generated + safe + production-ready booking reference .
 module.exports = mongoose.model("Booking", bookingSchema);

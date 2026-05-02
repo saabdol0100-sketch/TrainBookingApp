@@ -86,6 +86,7 @@ exports.signupByAdmin = async (req, res) => {
       user.name = name.trim();
       user.password = hashedPassword;
       Object.assign(user, otpData);
+      user.isVerified = false;
       await user.save();
     }
 
@@ -156,6 +157,7 @@ exports.signup = async (req, res) => {
       userExists.name = name;
       userExists.password = hashedPassword;
       Object.assign(userExists, otpData);
+      userExists.isVerified = false;
       await userExists.save();
       user = userExists;
     }
@@ -228,10 +230,6 @@ exports.verifyOTP = async (req, res) => {
       user.isVerified = true;
     }
 
-    if (type === "reset") {
-      user.isVerified = true; // 🔥 important
-    }
-
     await user.save();
 
     if (type === "signup") {
@@ -292,7 +290,6 @@ exports.forgotPassword = async (req, res) => {
     user.otp = hashOTP(otp);
     user.otpExpires = Date.now() + 5 * 60 * 1000;
     user.otpPurpose = "reset";
-    user.isVerified = false;
 
     await user.save();
 
@@ -312,8 +309,7 @@ exports.resetPassword = async (req, res) => {
     const user = await User.findOne({ email: email.toLowerCase().trim() });
     if (!user) return sendRes(res, 404, false, "User not found");
 
-    // 🔥 ONLY CHECK THIS
-    if (!user.isVerified) {
+    if (user.otpPurpose !== "reset") {
       return sendRes(res, 400, false, "OTP not verified");
     }
 
@@ -323,11 +319,9 @@ exports.resetPassword = async (req, res) => {
 
     user.password = await bcrypt.hash(newPassword, 12);
 
-    // clear everything
     user.otp = null;
     user.otpExpires = null;
     user.otpPurpose = null;
-    user.isVerified = false;
 
     await user.save();
 
@@ -351,13 +345,15 @@ exports.loginWithGoogle = async (req, res) => {
       return sendRes(res, 400, false, "Invalid Google account");
     }
 
-    let user = await User.findOne({ email: payload.email });
+    const normalizedEmail = payload.email.toLowerCase().trim();
+
+    let user = await User.findOne({ email: normalizedEmail });
 
     if (!user) {
       user = await User.create({
         name: payload.name,
-        email: payload.email.toLowerCase().trim(),
-        role: "User",
+        email: normalizedEmail,
+        role: "user",
         oauthProvider: "google",
         isVerified: true,
         isActive: true,
@@ -368,10 +364,8 @@ exports.loginWithGoogle = async (req, res) => {
       return sendRes(res, 403, false, "Account disabled");
     }
 
-    const appToken = generateToken(user);
-
-    sendRes(res, 200, true, "Google login success", {
-      token: appToken,
+    return sendRes(res, 200, true, "Google login success", {
+      token: generateToken(user),
       user: {
         id: user._id,
         name: user.name,
@@ -381,7 +375,7 @@ exports.loginWithGoogle = async (req, res) => {
     });
   } catch (err) {
     console.log(err);
-    sendRes(res, 500, false, "Google login failed");
+    return sendRes(res, 500, false, "Google login failed");
   }
 };
 exports.loginWithFacebook = async (req, res) => {
@@ -406,7 +400,7 @@ exports.loginWithFacebook = async (req, res) => {
       user = await User.create({
         name: profile.name,
         email: normalizedEmail,
-        role: "user", // ✅ fixed
+        role: "user",
         oauthProvider: "facebook",
         isVerified: true,
         isActive: true,
@@ -417,10 +411,8 @@ exports.loginWithFacebook = async (req, res) => {
       return sendRes(res, 403, false, "Account disabled");
     }
 
-    const appToken = generateToken(user);
-
     return sendRes(res, 200, true, "Facebook login success", {
-      token: appToken,
+      token: generateToken(user),
       user: {
         id: user._id,
         name: user.name,
@@ -476,10 +468,8 @@ exports.updateAccount = async (req, res) => {
 
     const updateData = {};
 
-    // 🔹 name
     if (name) updateData.name = name.trim();
 
-    // 🔹 email
     if (email) {
       const normalizedEmail = email.toLowerCase().trim();
 
@@ -490,10 +480,9 @@ exports.updateAccount = async (req, res) => {
       }
 
       updateData.email = normalizedEmail;
-      updateData.isVerified = false; // force reverify
+      updateData.isVerified = false;
     }
 
-    // 🔹 phone
     if (phone) {
       const phoneRegex = /^01[0125][0-9]{8}$/;
 
@@ -510,7 +499,6 @@ exports.updateAccount = async (req, res) => {
       updateData.phone = phone;
     }
 
-    // 🔹 national id
     if (NationalId) {
       const nationalIdRegex = /^[0-9]{14}$/;
 
@@ -528,15 +516,12 @@ exports.updateAccount = async (req, res) => {
       updateData.dateOfBirth = extractDOBFromNationalId(NationalId);
     }
 
-    // 🔹 country
     if (country) updateData.country = country;
 
-    // 🔒 prevent role escalation
     if (role) {
       return sendRes(res, 403, false, "Role cannot be updated here");
     }
 
-    // 🔐 password
     if (password) {
       if (password.length < 8) {
         return sendRes(
@@ -575,15 +560,17 @@ exports.deleteAccount = async (req, res) => {
       return sendRes(res, 404, false, "User not found");
     }
 
-    // 🔒 prevent deleting admins
+    if (!user.isActive) {
+      return sendRes(res, 400, false, "Account already deleted");
+    }
+
     if (user.role === "admin") {
       return sendRes(res, 403, false, "Admin account cannot be deleted");
     }
 
-    // 🔒 check active bookings
     const hasBookings = await Booking.exists({
       user_id: userId,
-      status: "active",
+      status: { $in: ["active", "reserved"] },
     });
 
     if (hasBookings) {
@@ -595,12 +582,12 @@ exports.deleteAccount = async (req, res) => {
       );
     }
 
-    // 🔥 soft delete (production-safe)
     user.isActive = false;
+    user.isVerified = false;
+
     user.email = `deleted_${Date.now()}_${user.email}`;
     user.phone = null;
 
-    // 🔥 clear sensitive data
     user.otp = null;
     user.otpExpires = null;
     user.otpPurpose = null;

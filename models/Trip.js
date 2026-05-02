@@ -6,7 +6,6 @@ const tripSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "Train",
       required: true,
-      index: true,
     },
 
     fromStation: {
@@ -24,6 +23,7 @@ const tripSchema = new mongoose.Schema(
     departureDate: {
       type: Date,
       required: true,
+      index: true,
     },
 
     arrivalDate: {
@@ -34,8 +34,6 @@ const tripSchema = new mongoose.Schema(
     price: {
       type: Number,
       required: true,
-      min: 0,
-      default: 0,
     },
 
     status: {
@@ -44,19 +42,20 @@ const tripSchema = new mongoose.Schema(
       default: "scheduled",
       index: true,
     },
+
+    stops: [
+      {
+        station: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "Station",
+        },
+        arrivalTime: Date,
+        departureTime: Date,
+      },
+    ],
   },
   { timestamps: true },
 );
-
-tripSchema.pre("save", async function () {
-  if (this.fromStation.toString() === this.toStation.toString()) {
-    throw new Error("From and To station cannot be same");
-  }
-
-  if (this.arrivalDate <= this.departureDate) {
-    throw new Error("Arrival must be after departure");
-  }
-});
 
 tripSchema.index({
   fromStation: 1,

@@ -133,3 +133,34 @@ https://trainbookingapp.fly.dev/api/v1/email/UserCreate/admin
   "confirmPassword": "12345678",
   "role": "user"
 }
+
+
+
+
+================================================================E.GS 
+{
+  "email": "saabdol0100@gmail.com",
+  "otp": "651827",
+  "newPassword":"newPassword"
+}
+
+
+
+============================
+{
+
+  "email": "kamalabdol324@gmail.com",
+ 
+  "password": "Salehabdo"
+ 
+  
+}
+
+{
+    "success": true,
+    "msg": "Login success",
+    "data": {
+        "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5ZjRjNGIzOTM5ZGI5ZjEwNDZlOWQ2ZSIsInJvbGUiOiJ1c2VyIiwiaWF0IjoxNzc3NjQ4OTg3LCJleHAiOjE3NzgyNTM3ODd9.hZG2lgd40bGVEcR97aBFeZfoO6TTKFacLy0sWhNFyps"
+    }
+}
+

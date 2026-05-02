@@ -7,6 +7,7 @@ const userSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
+
     email: {
       type: String,
       required: true,
@@ -16,6 +17,7 @@ const userSchema = new mongoose.Schema(
       index: true,
       match: [/^\S+@\S+\.\S+$/, "Invalid email"],
     },
+
     phone: {
       type: String,
       required: true,
@@ -23,10 +25,12 @@ const userSchema = new mongoose.Schema(
       trim: true,
       index: true,
     },
+
     password: {
       type: String,
       minlength: 6,
     },
+
     role: {
       type: String,
       enum: ["user", "admin", "commissary"],
@@ -37,41 +41,52 @@ const userSchema = new mongoose.Schema(
     isVerified: {
       type: Boolean,
       default: false,
+      index: true,
     },
 
     isActive: {
       type: Boolean,
       default: true,
+      index: true,
     },
 
     otp: {
       type: String,
       default: null,
+      select: false,
     },
 
     otpExpires: {
       type: Date,
       default: null,
+      select: false,
     },
+
     otpPurpose: {
       type: String,
       enum: ["signup", "reset", "verify"],
       default: null,
+      select: false,
     },
+
     oauthProvider: {
       type: String,
       enum: ["local", "google", "facebook"],
       default: "local",
+      index: true,
     },
   },
   { timestamps: true },
 );
+
 userSchema.index({ email: 1, phone: 1 });
+
 userSchema.set("toJSON", {
   transform: function (doc, ret) {
     delete ret.password;
     delete ret.otp;
     delete ret.otpExpires;
+    delete ret.otpPurpose;
     return ret;
   },
 });

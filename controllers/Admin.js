@@ -30,10 +30,93 @@ const send = (
   });
 };
 
+const generateTalgoSeats = (train, tripId, basePrice = 0) => {
+  let seatNumber = 1;
+  const seats = [];
+
+  const classPrices = {
+    VIP: basePrice + 200,
+    First: basePrice + 100,
+    Second: basePrice,
+  };
+
+  const pushSeat = (classType, row, position) => {
+    seats.push({
+      trip: tripId,
+      seatNumber: seatNumber++,
+      classType,
+      price: classPrices[classType] || basePrice,
+      row,
+      position,
+    });
+  };
+
+  // =====================
+  // SECOND CLASS (Talgo 2-2 zigzag)
+  // =====================
+  if (train.classes?.Second) {
+    const total = train.classes.Second;
+    let created = 0;
+    let row = 1;
+
+    while (created < total) {
+      const isReversed = row % 2 === 0;
+
+      const layout = isReversed
+        ? ["window", "aisle", "aisle", "window"].reverse()
+        : ["window", "aisle", "aisle", "window"];
+
+      for (let pos of layout) {
+        if (created >= total) break;
+        pushSeat("Second", row, pos);
+        created++;
+      }
+
+      row++;
+    }
+  }
+
+  // =====================
+  // FIRST CLASS (Talgo 2+1)
+  // =====================
+  if (train.classes?.First) {
+    const total = train.classes.First;
+    let created = 0;
+    let row = 1;
+
+    while (created < total) {
+      const layout = ["window", "aisle", "window"];
+
+      for (let pos of layout) {
+        if (created >= total) break;
+        pushSeat("First", row, pos);
+        created++;
+      }
+
+      row++;
+    }
+  }
+
+  // =====================
+  // VIP (simple 1-1)
+  // =====================
+  if (train.classes?.VIP) {
+    const total = train.classes.VIP;
+
+    for (let i = 0; i < total; i++) {
+      pushSeat("VIP", Math.floor(i / 2) + 1, i % 2 === 0 ? "window" : "aisle");
+    }
+  }
+
+  return seats;
+};
+
 // ===== Create =====
 exports.createStations = async (req, res) => {
   try {
-    if (!Array.isArray(req.body.stations) || req.body.stations.length === 0) {
+    const { stations } = req.body;
+
+    if (!Array.isArray(stations) || stations.length === 0) {
       return send(res, {
         success: false,
         msg: "Stations array required",
@@ -41,30 +124,48 @@ exports.createStations = async (req, res) => {
       });
     }
 
-    const ops = req.body.stations.map((s) => {
-      if (!s.name) throw new Error("Station name required");
+    const ops = [];
 
-      return {
+    for (const s of stations) {
+      if (!s.name?.trim()) continue;
+
+      const normalizedName = s.name.trim().toLowerCase();
+
+      const validCoords =
+        Array.isArray(s.coordinates) &&
+        s.coordinates.length === 2 &&
+        typeof s.coordinates[0] === "number" &&
+        typeof s.coordinates[1] === "number";
+
+      ops.push({
         updateOne: {
-          filter: { name: s.name.trim().toLowerCase() },
+          filter: { normalizedName },
           update: {
             $set: {
               name: s.name.trim(),
+              normalizedName,
               location: s.location?.trim() || "",
-              coordinates: {
-                type: "Point",
-                coordinates:
-                  Array.isArray(s.coordinates) && s.coordinates.length === 2
-                    ? s.coordinates
-                    : [0, 0],
-              },
+              coordinates: validCoords
+                ? {
+                    type: "Point",
+                    coordinates: s.coordinates,
+                  }
+                : undefined,
               status: s.status || "active",
             },
           },
           upsert: true,
         },
-      };
-    });
+      });
+    }
+
+    if (!ops.length) {
+      return send(res, {
+        success: false,
+        msg: "No valid stations",
+        status: 400,
+      });
+    }
 
     const result = await Station.bulkWrite(ops);
 
@@ -72,7 +173,6 @@ exports.createStations = async (req, res) => {
       success: true,
       msg: "Stations upserted",
       count: result.upsertedCount + result.modifiedCount,
-      data: result,
     });
   } catch (err) {
     return send(res, {
@@ -86,7 +186,7 @@ exports.createStation = async (req, res) => {
   try {
     const { name, location, coordinates, status } = req.body;
 
-    if (!name) {
+    if (!name?.trim()) {
       return send(res, {
         success: false,
         msg: "Station name required",
@@ -94,37 +194,40 @@ exports.createStation = async (req, res) => {
       });
     }
 
-    const exists = await Station.findOne({
-      name: name.trim().toLowerCase(),
-    });
+    const normalizedName = name.trim().toLowerCase();
 
-    if (exists) {
-      return send(res, {
-        success: false,
-        msg: "Station already exists",
-        status: 400,
-      });
-    }
+    const validCoords =
+      Array.isArray(coordinates) &&
+      coordinates.length === 2 &&
+      typeof coordinates[0] === "number" &&
+      typeof coordinates[1] === "number";
 
-    const station = await Station.create({
-      name: name.trim(),
-      location: location?.trim() || "",
-      coordinates: {
-        type: "Point",
-        coordinates:
-          Array.isArray(coordinates) && coordinates.length === 2
-            ? coordinates
-            : [0, 0],
+    // 🔥 ATOMIC UPSERT (no race condition)
+    const station = await Station.findOneAndUpdate(
+      { normalizedName },
+      {
+        $setOnInsert: {
+          name: name.trim(),
+          normalizedName,
+          location: location?.trim() || "",
+          coordinates: validCoords
+            ? {
+                type: "Point",
+                coordinates,
+              }
+            : undefined,
+          status: status || "active",
+        },
       },
-      status: status || "active",
-    });
-
-    const count = await Station.countDocuments();
+      {
+        new: true,
+        upsert: true,
+      },
+    );
 
     return send(res, {
       success: true,
       msg: "Station created",
-      count,
       data: station,
       status: 201,
     });
@@ -138,7 +241,9 @@ exports.createStation = async (req, res) => {
 };
 exports.createTrains = async (req, res) => {
   try {
-    if (!Array.isArray(req.body.trains) || req.body.trains.length === 0) {
+    const { trains } = req.body;
+
+    if (!Array.isArray(trains) || !trains.length) {
       return send(res, {
         success: false,
         msg: "Invalid trains array",
@@ -146,27 +251,34 @@ exports.createTrains = async (req, res) => {
       });
     }
 
-    const ops = req.body.trains.map((t) => {
-      if (!t.number || !t.name || !t.route || !t.seats || t.seats <= 0) {
-        throw new Error("Missing or invalid train fields");
-      }
+    const ops = [];
 
-      return {
+    for (const t of trains) {
+      if (!t.number || !t.name || !t.type) continue;
+
+      ops.push({
         updateOne: {
           filter: { number: t.number },
           update: {
             $set: {
               name: t.name.trim(),
-              route: t.route.trim(),
-              seats: t.seats,
+              type: t.type,
               status: t.status || "active",
-              type: t.type || "normal",
+
+              // ✅ classes instead of seats
+              classes: {
+                VIP: t.classes?.VIP || 0,
+                First: t.classes?.First || 0,
+                Second: t.classes?.Second || 0,
+              },
+
+              layout: t.layout || "standard",
             },
           },
           upsert: true,
         },
-      };
-    });
+      });
+    }
 
     const result = await Train.bulkWrite(ops);
 
@@ -174,50 +286,41 @@ exports.createTrains = async (req, res) => {
       success: true,
       msg: "Trains upserted",
       count: result.upsertedCount + result.modifiedCount,
-      data: result,
     });
   } catch (err) {
-    return send(res, {
-      success: false,
-      msg: err.message,
-      status: 500,
-    });
+    return send(res, { success: false, msg: err.message, status: 500 });
   }
 };
 exports.createTrain = async (req, res) => {
   try {
-    const { number, name, route, seats, status, type } = req.body;
+    const { number, name, type, classes, layout, status } = req.body;
 
-    if (!number || !name || !route || !seats || seats <= 0) {
-      return send(res, {
-        success: false,
-        msg: "Invalid input",
-        status: 400,
-      });
+    if (!number || !name || !type) {
+      return send(res, { success: false, msg: "Invalid input", status: 400 });
     }
 
-    const cleanName = name.trim();
+    const train = await Train.findOneAndUpdate(
+      { number },
+      {
+        $setOnInsert: {
+          name: name.trim(),
+          type,
+          status: status || "active",
 
-    const exists = await Train.findOne({
-      $or: [{ number }, { name: cleanName }],
-    });
+          classes: {
+            VIP: classes?.VIP || 0,
+            First: classes?.First || 0,
+            Second: classes?.Second || 0,
+          },
 
-    if (exists) {
-      return send(res, {
-        success: false,
-        msg: "Train already exists",
-        status: 400,
-      });
-    }
-
-    const train = await Train.create({
-      number,
-      name: cleanName,
-      route: route.trim(),
-      seats,
-      status: status || "active",
-      type: type || "normal",
-    });
+          layout: layout || "standard",
+        },
+      },
+      {
+        new: true,
+        upsert: true,
+      },
+    );
 
     return send(res, {
       success: true,
@@ -234,20 +337,12 @@ exports.createTrain = async (req, res) => {
   }
 };
 exports.createTrips = async (req, res) => {
-  let session = null;
+  const session = await mongoose.startSession();
+  session.startTransaction();
 
   try {
     if (!Array.isArray(req.body.trips) || req.body.trips.length === 0) {
-      return send(res, {
-        success: false,
-        msg: "Invalid trips array",
-        status: 400,
-      });
-    }
-
-    if (process.env.USE_TRANSACTION === "true") {
-      session = await mongoose.startSession();
-      session.startTransaction();
+      throw new Error("Invalid trips array");
     }
 
     const createdTrips = [];
@@ -272,107 +367,55 @@ exports.createTrips = async (req, res) => {
         throw new Error("Missing required fields");
       }
 
-      if (
-        !mongoose.Types.ObjectId.isValid(train) ||
-        !mongoose.Types.ObjectId.isValid(fromStation) ||
-        !mongoose.Types.ObjectId.isValid(toStation)
-      ) {
-        throw new Error("Invalid IDs");
-      }
-
-      if (fromStation === toStation) {
-        throw new Error("From and To station cannot be same");
-      }
-
-      if (new Date(arrivalDate) <= new Date(departureDate)) {
-        throw new Error("Arrival must be after departure");
-      }
-
-      const foundTrain = session
-        ? await Train.findById(train).session(session)
-        : await Train.findById(train);
-
+      const foundTrain = await Train.findById(train).session(session);
       if (!foundTrain) throw new Error("Train not found");
 
-      const [from, to] = await Promise.all([
-        session
-          ? Station.findById(fromStation).session(session)
-          : Station.findById(fromStation),
-
-        session
-          ? Station.findById(toStation).session(session)
-          : Station.findById(toStation),
-      ]);
-
-      if (!from || !to) throw new Error("Station not found");
-
-      const exists = session
-        ? await Trip.findOne({
-            train,
-            fromStation,
-            toStation,
-            departureDate: new Date(departureDate),
-          }).session(session)
-        : await Trip.findOne({
-            train,
-            fromStation,
-            toStation,
-            departureDate: new Date(departureDate),
-          });
-
-      if (exists) throw new Error("Trip already exists");
-
-      const tripData = {
+      const exists = await Trip.findOne({
         train,
         fromStation,
         toStation,
-        departureDate,
-        arrivalDate,
-        price,
-      };
+        departureDate: new Date(departureDate),
+      }).session(session);
 
-      const newTrip = new Trip(tripData);
+      if (exists) throw new Error("Trip already exists");
 
-      if (session) {
-        await newTrip.save({ session });
-      } else {
-        await newTrip.save();
-      }
+      const trip = await Trip.create(
+        [
+          {
+            train,
+            fromStation,
+            toStation,
+            departureDate,
+            arrivalDate,
+            price,
+          },
+        ],
+        { session },
+      );
 
-      createdTrips.push(newTrip);
+      // 🔥 generate seats
+      const seats = generateTalgoSeats(foundTrain, trip[0]._id, price);
 
-      const seats = Array.from({ length: foundTrain.seats }, (_, i) => ({
-        train,
-        trip: newTrip._id,
-        seatNumber: i + 1,
-      }));
+      await Seat.insertMany(seats, { session });
 
-      if (session) {
-        await Seat.insertMany(seats, { session });
-      } else {
-        await Seat.insertMany(seats);
-      }
+      createdTrips.push({
+        trip: trip[0],
+        seatsCreated: seats.length,
+      });
     }
 
-    if (session) {
-      await session.commitTransaction();
-      session.endSession();
-    }
+    await session.commitTransaction();
+    session.endSession();
 
     return send(res, {
       success: true,
-      msg: "Trips created with seats",
+      msg: "Trips created with Talgo seats",
       count: createdTrips.length,
       data: createdTrips,
     });
   } catch (err) {
-    console.error("FULL ERROR:", err);
-    console.error("STACK:", err.stack);
-
-    if (session) {
-      await session.abortTransaction();
-      session.endSession();
-    }
+    await session.abortTransaction();
+    session.endSession();
 
     return send(res, {
       success: false,
@@ -382,7 +425,8 @@ exports.createTrips = async (req, res) => {
   }
 };
 exports.createTrip = async (req, res) => {
-  let session = null;
+  const session = await mongoose.startSession();
+  session.startTransaction();
 
   try {
     const {
@@ -420,87 +464,49 @@ exports.createTrip = async (req, res) => {
       throw new Error("Arrival must be after departure");
     }
 
-    if (process.env.USE_TRANSACTION === "true") {
-      session = await mongoose.startSession();
-      session.startTransaction();
-    }
-
-    const foundTrain = session
-      ? await Train.findById(train).session(session)
-      : await Train.findById(train);
-
+    const foundTrain = await Train.findById(train).session(session);
     if (!foundTrain) throw new Error("Train not found");
 
-    const [from, to] = await Promise.all([
-      session
-        ? Station.findById(fromStation).session(session)
-        : Station.findById(fromStation),
-
-      session
-        ? Station.findById(toStation).session(session)
-        : Station.findById(toStation),
-    ]);
-
-    if (!from || !to) throw new Error("Station not found");
-
-    const exists = session
-      ? await Trip.findOne({
-          train,
-          fromStation,
-          toStation,
-          departureDate: new Date(departureDate),
-        }).session(session)
-      : await Trip.findOne({
-          train,
-          fromStation,
-          toStation,
-          departureDate: new Date(departureDate),
-        });
-
-    if (exists) throw new Error("Trip already exists");
-
-    const tripData = {
+    const exists = await Trip.findOne({
       train,
       fromStation,
       toStation,
-      departureDate,
-      arrivalDate,
-      price,
-    };
+      departureDate: new Date(departureDate),
+    }).session(session);
 
-    const trip = new Trip(tripData);
+    if (exists) throw new Error("Trip already exists");
 
-    if (session) {
-      await trip.save({ session });
-    } else {
-      await trip.save();
-    }
+    const trip = await Trip.create(
+      [
+        {
+          train,
+          fromStation,
+          toStation,
+          departureDate,
+          arrivalDate,
+          price,
+        },
+      ],
+      { session },
+    );
 
-    const seats = Array.from({ length: foundTrain.seats }, (_, i) => ({
-      train,
-      trip: trip._id,
-      seatNumber: i + 1,
-    }));
+    // 🔥 generate seats
+    const seats = generateTalgoSeats(foundTrain, trip[0]._id, price);
 
-    if (session) {
-      await Seat.insertMany(seats, { session });
-      await session.commitTransaction();
-      session.endSession();
-    } else {
-      await Seat.insertMany(seats);
-    }
+    await Seat.insertMany(seats, { session });
+
+    await session.commitTransaction();
+    session.endSession();
 
     return send(res, {
       success: true,
-      msg: "Trip created with seats",
-      data: trip,
-      status: 201,
+      msg: "Trip created with Talgo seats",
+      data: trip[0],
+      seatsCreated: seats.length,
     });
   } catch (err) {
-    if (session) {
-      await session.abortTransaction();
-      session.endSession();
-    }
+    await session.abortTransaction();
+    session.endSession();
 
     return send(res, {
       success: false,
@@ -509,143 +515,52 @@ exports.createTrip = async (req, res) => {
     });
   }
 };
-exports.createSeats = async (req, res) => {
+exports.adminManageSeats = async (req, res) => {
   try {
-    if (!Array.isArray(req.body.seats) || req.body.seats.length === 0) {
-      return send(res, {
-        success: false,
-        msg: "Invalid seats array",
-        status: 400,
-      });
+    const { seats } = req.body;
+
+    if (!Array.isArray(seats) || seats.length === 0) {
+      return sendRes(res, 400, false, "Seats array required");
     }
 
-    const cleaned = [];
+    const operations = [];
 
-    for (const s of req.body.seats) {
-      const { train, trip, seatNumber } = s;
+    for (const s of seats) {
+      const { seatId, tripId, updates } = s;
 
-      if (!train || !trip || !seatNumber) {
-        throw new Error("Missing required fields");
+      // ✅ Validate
+      if (!seatId || !mongoose.Types.ObjectId.isValid(seatId)) {
+        throw new Error("Invalid seatId");
       }
 
-      if (
-        !mongoose.Types.ObjectId.isValid(train) ||
-        !mongoose.Types.ObjectId.isValid(trip)
-      ) {
-        throw new Error("Invalid IDs");
+      const existingSeat = await Seat.findById(seatId);
+      if (!existingSeat) throw new Error("Seat not found");
+
+      // 🔒 Protect critical fields (IMPORTANT)
+      const forbiddenFields = ["seatNumber", "trip", "classType", "row"];
+
+      for (const key of Object.keys(updates)) {
+        if (forbiddenFields.includes(key)) {
+          throw new Error(`Cannot update protected field: ${key}`);
+        }
       }
 
-      const foundTrain = await Train.findById(train);
-      if (!foundTrain) throw new Error("Train not found");
-
-      const foundTrip = await Trip.findById(trip);
-      if (!foundTrip) throw new Error("Trip not found");
-
-      const exists = await Seat.findOne({
-        trip,
-        seatNumber,
-      });
-
-      if (exists) throw new Error(`Seat ${seatNumber} already exists`);
-
-      cleaned.push({
-        train,
-        trip,
-        seatNumber,
+      operations.push({
+        updateOne: {
+          filter: { _id: seatId },
+          update: { $set: updates },
+        },
       });
     }
 
-    const seats = await Seat.insertMany(cleaned, { ordered: false });
+    const result = await Seat.bulkWrite(operations);
 
-    return send(res, {
-      success: true,
-      msg: "Seats created",
-      count: seats.length,
-      data: seats,
+    return sendRes(res, 200, true, "Seats updated", {
+      modified: result.modifiedCount,
     });
   } catch (err) {
-    return send(res, {
-      success: false,
-      msg: err.message,
-      status: 500,
-    });
-  }
-};
-exports.createSeat = async (req, res) => {
-  try {
-    const { train, trip, seatNumber } = req.body;
-
-    if (!train || !trip || !seatNumber) {
-      return send(res, {
-        success: false,
-        msg: "Missing required fields",
-        status: 400,
-      });
-    }
-
-    if (
-      !mongoose.Types.ObjectId.isValid(train) ||
-      !mongoose.Types.ObjectId.isValid(trip)
-    ) {
-      return send(res, {
-        success: false,
-        msg: "Invalid IDs",
-        status: 400,
-      });
-    }
-
-    const foundTrain = await Train.findById(train);
-    if (!foundTrain) {
-      return send(res, {
-        success: false,
-        msg: "Train not found",
-        status: 404,
-      });
-    }
-
-    const foundTrip = await Trip.findById(trip);
-    if (!foundTrip) {
-      return send(res, {
-        success: false,
-        msg: "Trip not found",
-        status: 404,
-      });
-    }
-
-    const exists = await Seat.findOne({
-      trip,
-      seatNumber,
-    });
-
-    if (exists) {
-      return send(res, {
-        success: false,
-        msg: "Seat already exists in this trip",
-        status: 400,
-      });
-    }
-
-    const seat = await Seat.create({
-      train,
-      trip,
-      seatNumber,
-    });
-
-    const count = await Seat.countDocuments();
-
-    return send(res, {
-      success: true,
-      msg: "Seat created",
-      count,
-      data: seat,
-      status: 201,
-    });
-  } catch (err) {
-    return send(res, {
-      success: false,
-      msg: err.message,
-      status: 500,
-    });
+    console.error("adminManageSeats:", err);
+    return sendRes(res, 500, false, err.message);
   }
 };
 //==========  Get  =========
@@ -663,6 +578,7 @@ exports.getTripById = async (req, res) => {
 
     const trip = await Trip.findById(id)
       .populate("train fromStation toStation")
+      .populate("stops.station", "name")
       .lean();
 
     if (!trip) {
@@ -673,7 +589,19 @@ exports.getTripById = async (req, res) => {
       });
     }
 
-    return send(res, { msg: "Trip fetched", data: trip });
+    const durationMs =
+      new Date(trip.arrivalDate) - new Date(trip.departureDate);
+
+    const hours = Math.floor(durationMs / (1000 * 60 * 60));
+    const minutes = Math.floor((durationMs % (1000 * 60 * 60)) / (1000 * 60));
+
+    return send(res, {
+      msg: "Trip fetched",
+      data: {
+        ...trip,
+        duration: `${hours}h ${minutes}m`,
+      },
+    });
   } catch (err) {
     return send(res, { success: false, msg: err.message, status: 500 });
   }
@@ -691,7 +619,8 @@ exports.getTripRoute = async (req, res) => {
     }
 
     const trip = await Trip.findById(tripId)
-      .populate("train fromStation toStation")
+      .populate("fromStation toStation")
+      .populate("stops.station", "name")
       .lean();
 
     if (!trip) {
@@ -702,23 +631,15 @@ exports.getTripRoute = async (req, res) => {
       });
     }
 
-    const stations = await Station.find().sort({ createdAt: 1 }).lean();
-
-    const fromIndex = stations.findIndex(
-      (s) => s._id.toString() === trip.fromStation._id.toString(),
-    );
-
-    const toIndex = stations.findIndex(
-      (s) => s._id.toString() === trip.toStation._id.toString(),
-    );
-
-    let route = [];
-
-    if (fromIndex <= toIndex) {
-      route = stations.slice(fromIndex, toIndex + 1);
-    } else {
-      route = stations.slice(toIndex, fromIndex + 1).reverse();
-    }
+    const route = [
+      { name: trip.fromStation.name },
+      ...(trip.stops || []).map((s) => ({
+        name: s.station?.name,
+        arrivalTime: s.arrivalTime,
+        departureTime: s.departureTime,
+      })),
+      { name: trip.toStation.name },
+    ];
 
     return send(res, {
       success: true,
@@ -726,7 +647,6 @@ exports.getTripRoute = async (req, res) => {
       count: route.length,
       data: {
         tripId: trip._id,
-        train: trip.train,
         route,
       },
     });
@@ -743,13 +663,16 @@ exports.getAllTrips = async (req, res) => {
     const page = Math.max(parseInt(req.query.page) || 1, 1);
     const limit = Math.min(parseInt(req.query.limit) || 10, 100);
 
-    const trips = await Trip.find()
+    const query = { status: "scheduled" };
+
+    const trips = await Trip.find(query)
       .populate("train fromStation toStation")
+      .sort({ departureDate: 1 })
       .skip((page - 1) * limit)
       .limit(limit)
       .lean();
 
-    const count = await Trip.countDocuments();
+    const count = await Trip.countDocuments(query);
 
     return send(res, {
       msg: "Trips fetched",
@@ -805,8 +728,11 @@ exports.getTrainById = async (req, res) => {
 };
 exports.getAllStations = async (req, res) => {
   try {
-    const stations = await Station.find().lean();
-    const count = await Station.countDocuments();
+    const stations = await Station.find({ status: "active" })
+      .sort({ name: 1 })
+      .lean();
+
+    const count = await Station.countDocuments({ status: "active" });
 
     return send(res, {
       msg: "Stations fetched",
@@ -851,6 +777,7 @@ exports.getAllUsers = async (req, res) => {
 
     const users = await User.find()
       .select("-password -signupOtp -tempOtp")
+      .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(limit)
       .lean();
@@ -885,7 +812,9 @@ exports.getSeatsByTrainId = async (req, res) => {
     }
 
     const seats = await Seat.find({ train: trainId })
-      .populate("trip reservedBy", "-password")
+      .populate("trip", "fromStation toStation departureDate")
+      .populate("reservedBy", "-password")
+      .sort({ seatNumber: 1 })
       .lean();
 
     return send(res, {
@@ -914,7 +843,9 @@ exports.getSeatsByTripId = async (req, res) => {
     }
 
     const seats = await Seat.find({ trip: tripId })
-      .populate("train trip reservedBy", "-password")
+      .populate("train", "number type")
+      .populate("reservedBy", "-password")
+      .sort({ seatNumber: 1 })
       .lean();
 
     return send(res, {
@@ -943,10 +874,36 @@ exports.updateTripById = async (req, res) => {
     delete req.body.createdAt;
     delete req.body.updatedAt;
 
+    if (
+      req.body.fromStation &&
+      req.body.toStation &&
+      req.body.fromStation === req.body.toStation
+    ) {
+      return send(res, {
+        success: false,
+        msg: "From and To station cannot be same",
+        status: 400,
+      });
+    }
+
+    if (
+      req.body.departureDate &&
+      req.body.arrivalDate &&
+      new Date(req.body.arrivalDate) <= new Date(req.body.departureDate)
+    ) {
+      return send(res, {
+        success: false,
+        msg: "Arrival must be after departure",
+        status: 400,
+      });
+    }
+
     const trip = await Trip.findByIdAndUpdate(id, req.body, {
       new: true,
       runValidators: true,
-    }).populate("train fromStation toStation");
+    })
+      .populate("train fromStation toStation")
+      .populate("stops.station", "name");
 
     if (!trip) {
       return send(res, { success: false, msg: "Trip not found", status: 404 });
@@ -957,6 +914,7 @@ exports.updateTripById = async (req, res) => {
     return send(res, { success: false, msg: err.message, status: 500 });
   }
 };
+
 exports.updateTrainById = async (req, res) => {
   try {
     const { id } = req.params;
@@ -983,6 +941,7 @@ exports.updateTrainById = async (req, res) => {
     return send(res, { success: false, msg: err.message, status: 500 });
   }
 };
+
 exports.updateStationById = async (req, res) => {
   try {
     const { id } = req.params;
@@ -994,6 +953,10 @@ exports.updateStationById = async (req, res) => {
     delete req.body._id;
     delete req.body.createdAt;
     delete req.body.updatedAt;
+
+    if (req.body.name) {
+      req.body.name = req.body.name.trim();
+    }
 
     const station = await Station.findByIdAndUpdate(id, req.body, {
       new: true,
@@ -1013,6 +976,7 @@ exports.updateStationById = async (req, res) => {
     return send(res, { success: false, msg: err.message, status: 500 });
   }
 };
+
 exports.updateSeatById = async (req, res) => {
   try {
     const { id } = req.params;
@@ -1025,14 +989,27 @@ exports.updateSeatById = async (req, res) => {
     delete req.body.createdAt;
     delete req.body.updatedAt;
 
+    // prevent changing booked seats
+    const existingSeat = await Seat.findById(id);
+    if (!existingSeat) {
+      return send(res, { success: false, msg: "Seat not found", status: 404 });
+    }
+
+    if (existingSeat.status === "booked") {
+      return send(res, {
+        success: false,
+        msg: "Cannot update booked seat",
+        status: 400,
+      });
+    }
+
     const seat = await Seat.findByIdAndUpdate(id, req.body, {
       new: true,
       runValidators: true,
-    }).populate("train trip reservedBy");
-
-    if (!seat) {
-      return send(res, { success: false, msg: "Seat not found", status: 404 });
-    }
+    })
+      .populate("train", "number type")
+      .populate("trip", "fromStation toStation departureDate")
+      .populate("reservedBy", "-password");
 
     return send(res, { msg: "Seat updated", data: seat });
   } catch (err) {
@@ -1054,11 +1031,12 @@ exports.deleteAllTrains = async (req, res) => {
       Train.deleteMany({}),
       Trip.deleteMany({}),
       Seat.deleteMany({}),
+      Booking.deleteMany({}), // 🔥 added
     ]);
 
     return send(res, {
       success: true,
-      msg: "All trains, trips and seats deleted successfully",
+      msg: "All trains, trips, seats and bookings deleted successfully",
     });
   } catch (err) {
     return send(res, {
@@ -1173,9 +1151,15 @@ exports.deleteAllTrips = async (req, res) => {
       });
     }
 
-    await Promise.all([Trip.deleteMany({}), Seat.deleteMany({})]);
+    await Promise.all([
+      Trip.deleteMany({}),
+      Seat.deleteMany({}),
+      Booking.deleteMany({}), // 🔥 added
+    ]);
 
-    return send(res, { msg: "All trips and related seats deleted" });
+    return send(res, {
+      msg: "All trips, seats and bookings deleted",
+    });
   } catch (err) {
     return send(res, { success: false, msg: err.message, status: 500 });
   }
@@ -1225,6 +1209,15 @@ exports.deleteAllStations = async (req, res) => {
       });
     }
 
+    const used = await Trip.exists({});
+    if (used) {
+      return send(res, {
+        success: false,
+        msg: "Cannot delete stations while trips exist",
+        status: 400,
+      });
+    }
+
     await Station.deleteMany({});
 
     return send(res, { msg: "All stations deleted successfully" });
@@ -1254,6 +1247,15 @@ exports.deleteSeatById = async (req, res) => {
       });
     }
 
+    const hasBooking = await Booking.exists({ seats: seat._id });
+    if (hasBooking) {
+      return send(res, {
+        success: false,
+        msg: "Cannot delete seat with booking history",
+        status: 400,
+      });
+    }
+
     await seat.deleteOne();
 
     return send(res, { msg: "Seat deleted successfully" });
@@ -1265,15 +1267,7 @@ exports.deleteUserById = async (req, res) => {
   try {
     const { id } = req.params;
 
-    if (!id) {
-      return send(res, {
-        success: false,
-        msg: "User ID is required",
-        status: 400,
-      });
-    }
-
-    if (!mongoose.Types.ObjectId.isValid(id)) {
+    if (!id || !mongoose.Types.ObjectId.isValid(id)) {
       return send(res, {
         success: false,
         msg: "Invalid user ID",
@@ -1288,6 +1282,15 @@ exports.deleteUserById = async (req, res) => {
         success: false,
         msg: "User not found",
         status: 404,
+      });
+    }
+
+    const hasBookings = await Booking.exists({ user: id });
+    if (hasBookings) {
+      return send(res, {
+        success: false,
+        msg: "Cannot delete user with bookings",
+        status: 400,
       });
     }
 
@@ -1317,11 +1320,11 @@ exports.databaseFreeUp = async (req, res) => {
     }
 
     await Promise.all([
-      Station.deleteMany({}),
-      Train.deleteMany({}),
-      Trip.deleteMany({}),
-      Seat.deleteMany({}),
       Booking.deleteMany({}),
+      Seat.deleteMany({}),
+      Trip.deleteMany({}),
+      Train.deleteMany({}),
+      Station.deleteMany({}),
       User.deleteMany({ role: { $ne: "Admin" } }),
     ]);
 

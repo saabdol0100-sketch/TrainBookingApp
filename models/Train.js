@@ -15,18 +15,12 @@ const trainSchema = new mongoose.Schema(
       trim: true,
     },
 
-    route: {
+    // 🔥 REAL train types
+    type: {
       type: String,
+      enum: ["VIP", "Spanish", "French", "Russian", "Talgo"],
       required: true,
-      trim: true,
       index: true,
-    },
-
-    seats: {
-      type: Number,
-      required: true,
-      min: [1, "Train must have at least 1 seat"],
-      max: [2000, "Too many seats"],
     },
 
     status: {
@@ -36,20 +30,28 @@ const trainSchema = new mongoose.Schema(
       index: true,
     },
 
-    type: {
+    // 🔥 seats per class (CRITICAL)
+    classes: {
+      VIP: { type: Number, default: 0 },
+      First: { type: Number, default: 0 },
+      Second: { type: Number, default: 0 },
+    },
+
+    // 🔥 layout system
+    layout: {
       type: String,
-      enum: ["express", "vip", "normal"],
-      default: "normal",
+      enum: ["standard", "talgo_first", "talgo_second"],
+      default: "standard",
     },
   },
   { timestamps: true },
 );
 
+// display helper
 trainSchema.virtual("displayName").get(function () {
   return `${this.name} (#${this.number})`;
 });
 
 trainSchema.set("toJSON", { virtuals: true });
-trainSchema.set("toObject", { virtuals: true });
 
 module.exports = mongoose.model("Train", trainSchema);

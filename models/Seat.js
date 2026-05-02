@@ -2,13 +2,6 @@ const mongoose = require("mongoose");
 
 const seatSchema = new mongoose.Schema(
   {
-    train: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Train",
-      required: true,
-      index: true,
-    },
-
     trip: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Trip",
@@ -21,9 +14,23 @@ const seatSchema = new mongoose.Schema(
       required: true,
       min: 1,
     },
+
+    classType: {
+      type: String,
+      enum: ["VIP", "First", "Second"],
+      required: true,
+      index: true,
+    },
+
+    price: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
+
     status: {
       type: String,
-      enum: ["available", "reserved", "booked", "cancelled"],
+      enum: ["available", "reserved", "booked"],
       default: "available",
       index: true,
     },
@@ -35,33 +42,23 @@ const seatSchema = new mongoose.Schema(
       index: true,
     },
 
-    reservedAt: {
-      type: Date,
-      default: null,
-    },
+    reservedAt: Date,
 
     expireAt: {
       type: Date,
-      default: null,
+      index: true, // 🔥 used for TTL
     },
 
-    bookedAt: {
-      type: Date,
-      default: null,
-    },
+    bookedAt: Date,
   },
   { timestamps: true },
 );
 
+// ✅ UNIQUE seat per trip
 seatSchema.index({ trip: 1, seatNumber: 1 }, { unique: true });
+
+// ✅ fast filtering
 seatSchema.index({ trip: 1, status: 1 });
-
-seatSchema.methods.isExpired = function () {
-  return this.expireAt && this.expireAt < new Date();
-};
-
-seatSchema.methods.isAvailable = function () {
-  return this.status === "available" || this.isExpired();
-};
+seatSchema.index({ trip: 1, classType: 1 });
 
 module.exports = mongoose.model("Seat", seatSchema);

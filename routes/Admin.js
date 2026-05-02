@@ -10,8 +10,7 @@ router.post("/trains", ...adminOnly, AdminController.createTrains);
 router.post("/train", ...adminOnly, AdminController.createTrain);
 router.post("/trips", ...adminOnly, AdminController.createTrips);
 router.post("/trip", ...adminOnly, AdminController.createTrip);
-router.post("/seats", ...adminOnly, AdminController.createSeats);
-router.post("/seat", ...adminOnly, AdminController.createSeat);
+router.post("/seats", ...adminOnly, AdminController.adminManageSeats);
 router.post("/stations", ...adminOnly, AdminController.createStations);
 router.post("/station", ...adminOnly, AdminController.createStation);
 router.get("/trip-route/:tripId", authMiddleware, AdminController.getTripRoute);
@@ -59,7 +58,7 @@ router.delete("/users/:id", ...adminOnly, AdminController.deleteUserById);
 module.exports = router;
 
 //----------------------
-//! NumberOfMethods :- 25
+//! NumberOfMethods :- 27
 //----------------------
 
 // ===== CREATE =====
@@ -69,8 +68,7 @@ module.exports = router;
 //? 4- createTrain
 //? 5- createTrips
 //? 6- createTrip
-//? 7- createSeats
-//? 8- createSeat
+//? 7- adminManageSeats
 
 // ===== GET =====
 //? 9- getAllTrains
