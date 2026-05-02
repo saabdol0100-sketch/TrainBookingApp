@@ -164,3 +164,32 @@ https://trainbookingapp.fly.dev/api/v1/email/UserCreate/admin
     }
 }
 
+
+==============================================
+{
+  "email": "saabdol0100@gmail.com",
+  "password": "admin123"
+}{
+    "success": true,
+    "msg": "Login success",
+    "data": {
+        "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5ZjYyNzdmNjk0ZTM1MjgyYzM2ODJkMSIsInJvbGUiOiJhZG1pbiIsImlhdCI6MTc3Nzc0MDEzMSwiZXhwIjoxNzc4MzQ0OTMxfQ.0Q_UGXnbMuq2smxCcmUIqRQZf-g_aZXsqQOPTTByUeM"
+    }
+} 
+
+
+===================================
+{
+ 
+  "email":"kamalabdol324@gmail.com",
+
+  "password":"kamalPassword"
+
+}
+{
+    "success": true,
+    "msg": "Login success",
+    "data": {
+        "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5ZjYzZjVmNjIzZWIwYTI3YjE2OWM4YiIsInJvbGUiOiJ1c2VyIiwiaWF0IjoxNzc3NzQ1ODQ5LCJleHAiOjE3NzgzNTA2NDl9.QA5xazMtebpXkAJu0cNIvqT2_2t-QPmsrwcq520_nyw"
+    }
+}

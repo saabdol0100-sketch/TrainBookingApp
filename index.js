@@ -1,4 +1,4 @@
-require("dotenv").config();
+require("dotenv").config({ path: "./.env" });
 const mongoose = require("mongoose");
 const express = require("express");
 const helmet = require("helmet");
@@ -99,7 +99,9 @@ mongoose
     console.log("✅ MongoDB connected");
     const PORT = process.env.PORT || 3000;
     app.listen(PORT, "0.0.0.0", () => {
-      console.log(`🚀 Server running on port ${PORT}`);
+      console.log(
+        `🚀 Server running on port ${process.env.PORT} ${process.env.EMAIL_PASS}`,
+      );
     });
   })
   .catch((err) => {

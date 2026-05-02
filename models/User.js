@@ -11,7 +11,6 @@ const userSchema = new mongoose.Schema(
     email: {
       type: String,
       required: true,
-      unique: true,
       lowercase: true,
       trim: true,
       index: true,
@@ -20,15 +19,15 @@ const userSchema = new mongoose.Schema(
 
     phone: {
       type: String,
-      required: true,
-      unique: true,
       trim: true,
       index: true,
     },
 
     password: {
       type: String,
+      required: true,
       minlength: 6,
+      select: false,
     },
 
     role: {
@@ -53,20 +52,17 @@ const userSchema = new mongoose.Schema(
     otp: {
       type: String,
       default: null,
-      select: false,
     },
 
     otpExpires: {
       type: Date,
       default: null,
-      select: false,
     },
 
     otpPurpose: {
       type: String,
       enum: ["signup", "reset", "verify"],
       default: null,
-      select: false,
     },
 
     oauthProvider: {
