@@ -1,0 +1,256 @@
+Mallawi
+Deir Mawas
+Assiut
+Abnoub
+Manfalut
+Abu Tig
+Tahta
+Sohag
+Akhmim
+El-Maragha
+Girga
+Nag Hammadi
+Qena
+Qus
+Luxor
+Esna
+Edfu
+Kom Ombo
+Aswan
+New Valley
+Marsa Matruh
+El Alamein
+Borg El Arab
+10th of Ramadan
+Sadat City
+Cairo Ramses
+Bashtil
+Giza
+Shubra El-Kheima
+Qalyub
+Benha
+Tukh
+Quesna
+Shebin El-Kom
+Tanta
+Kafr El-Zayat
+Zefta
+El-Mahalla El-Kubra
+Mansoura
+Talkha
+Damietta
+Alexandria Misr
+Sidi Gaber
+Damanhour
+Kafr El-Dawwar
+Desouk
+Kafr El Sheikh
+Zagazig
+Belbeis
+Ismailia
+Port Said
+Suez
+Fayoum
+Beni Suef
+Minya
+Ain Shams
+Helwan
+Maadi
+Nasr City
+Obour
+Shibin El Qanater
+Banha East
+Mit Ghamr
+Aga
+Senbellawein
+Belqas
+Kafr Saqr
+Abu Hammad
+Faqus
+Abu Kebir
+Ras Sedr
+El Tor
+Hurghada
+Safaga
+Quseir
+Rosetta
+Abu Hummus
+Itay El Barud
+Shubrakhit
+Kom Hamada
+Edko
+Biyala
+Baltim
+Sidi Salem
+Fowa
+Kafr Saad
+Faraskur
+New Damietta
+Arish
+Bir El Abd
+Sheikh Zuweid
+Rafah
+Taba
+Sharm El Sheikh
+Dahab
+Samalut
+Beni Mazar
+Maghagha
+El Fashn
+Al Wasta
+Nasser
+Abu Qurqas
+Dayrout
+Qusiya
+Dishna
+Armant
+Tod
+Asyut West
+Qift
+Abu Tesht
+Kous
+Ballas
+Komir
+Kalabsha
+High Dam
+Basyoun
+Qutur
+Samanoud
+Sakha
+El Hamoul
+Sherbin
+Belqas Center
+Kafr Shukr
+Toukh
+Qaha
+Kafr El Batikh
+Ezbet El Borg
+Ras El Bar
+Mit Salsil
+El Gamaliya
+Matariya
+Manzala
+Minyet El Nasr
+Dikirnis
+Nabaroh
+Bani Ubayd
+El Senbellawein Center
+El Ibrahimiya
+Hihya
+Diyarb Negm
+Minya El Qamh
+Bilbeis
+Mashtoul El Souq
+Abu Hammad Center
+Kerdasa
+Hawamdeya
+Badrasheen
+Ayyat
+Atfih
+Saf
+Biba
+Ihnasia
+Somosta
+Nubaria
+Wadi El Natrun
+Badr
+Rashid Center
+Hamoul Center
+Motobas
+Qallin
+Riyadh
+Sidi Barrani
+Siwa
+Sallum
+Quseir City
+Marsa Alam
+Shalateen
+Abu Simbel
+Toshka
+Kharga
+Dakhla
+Farafra
+Baris
+Balat
+Paris
+Mut
+Qasr
+Bahariya
+Bawiti
+Frafra Oasis
+Ain Dalla
+Ain Khadra
+El Heiz
+Ain El Wadi
+Ain Amour
+Ain Bishmo
+Ain Tuni
+Ain Maghfa
+Ain Jowz
+Ain Sheikh
+Ain Horra
+Ain Samaha
+Ain Safi
+Ain El Serw
+Ain Hinnis
+Ain Girm
+Ain Marun
+Ain Dakhakhin
+Ain El Makfi
+Ain Abu Said
+Ain El Gedida
+Ain El Tarfawi
+Ain Umm Dabadib
+Ain Bashendi
+Ain Qalamun
+Ain Tenida
+Ain Budkhulu
+Ain Alamein
+El Dabaa
+Nagila
+Sidi Abdel Rahman
+القاهرة
+الجيزة
+بني سويف
+المنيا
+أسيوط
+سوهاج
+قنا
+الأقصر
+أسوان
+الإسكندرية
+طنطا
+الزقازيق
+دمياط
+بورسعيد
+الإسماعيلية
+المحلة الكبرى
+شبين الكوم
+كفر الشيخ
+دمنهور
+مرسى مطروح
+العريش
+السويس
+الفيوم
+المنوفية
+الشرقية
+المنصورة
+ميت غمر
+بلبيس
+أبو حماد
+الحسينية
+سيدي جابر
+أبو قير
+رأس البر
+كفر الدوار
+إدفو
+ديروط
+ملوي
+نجع حمادي
+الواحات البحرية
+الخارجة
+الفرافرة
+الطور
+شرم الشيخ
+الغردقة
+سفاجا
