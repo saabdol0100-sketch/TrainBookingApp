@@ -1,4 +1,4 @@
-const crypto = require("crypto");
+const { randomUUID } = require("crypto");
 const jwt = require("jsonwebtoken");
 
 // 🔐 Generate JWT Token
@@ -23,7 +23,7 @@ const generateOTP = () => {
 };
 
 const hashOTP = (otp) => {
-  return crypto
+  return randomUUID
     .createHmac("sha256", process.env.EMAIL_SECRET)
     .update(String(otp).trim()) // ✅ ALWAYS SAME FORMAT
     .digest("hex");
@@ -31,7 +31,10 @@ const hashOTP = (otp) => {
 
 const compareOTP = (stored, incoming) => {
   try {
-    return crypto.timingSafeEqual(Buffer.from(stored), Buffer.from(incoming));
+    return randomUUID.timingSafeEqual(
+      Buffer.from(stored),
+      Buffer.from(incoming),
+    );
   } catch {
     return false;
   }
