@@ -48,7 +48,15 @@ const userSchema = new mongoose.Schema(
       default: true,
       index: true,
     },
+    otpAttempts: {
+      type: Number,
+      default: 0,
+    },
 
+    otpSentAt: {
+      type: Date,
+      default: null,
+    },
     otp: {
       type: String,
       default: null,

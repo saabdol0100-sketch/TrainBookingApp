@@ -189,18 +189,18 @@ exports.resendOTP = async (req, res) => {
       return sendRes(res, 404, false, "User not found");
     }
 
-    // منع السبام (30 ثانية بين كل OTP)
+    // ⏱ cooldown 30 sec
     if (user.otpSentAt && Date.now() - user.otpSentAt < 30 * 1000) {
       return sendRes(res, 429, false, "Wait 30 seconds");
     }
 
     const otp = generateOTP();
 
-    user.otp = await hashOTP(otp);
-    user.otpExpires = Date.now() + 10 * 60 * 1000; // 10 دقائق
+    user.otp = hashOTP(otp);
+    user.otpExpires = Date.now() + 10 * 60 * 1000;
     user.otpPurpose = type;
     user.otpSentAt = Date.now();
-    user.otpAttempts = 0;
+    user.otpAttempts = 0; // 🔥 reset attempts
 
     await user.save();
 
@@ -239,30 +239,37 @@ exports.verifyOTP = async (req, res) => {
       return sendRes(res, 400, false, "OTP type mismatch");
     }
 
+    // 🚫 block after 5 attempts
+    if (user.otpAttempts >= 5) {
+      return sendRes(res, 429, false, "Too many attempts, request new OTP");
+    }
+
+    // ⏳ expired
     if (Date.now() > new Date(user.otpExpires).getTime()) {
       return sendRes(res, 400, false, "OTP expired");
     }
 
-    // ✅ HASH incoming OTP same way
     const hashedIncoming = hashOTP(otp);
-
-    // ✅ SAFE compare
     const isMatch = compareOTP(user.otp, hashedIncoming);
 
     if (!isMatch) {
+      user.otpAttempts += 1;
+      await user.save();
+
       return sendRes(res, 400, false, "Invalid OTP");
     }
 
-    // ✅ Success
+    // ✅ success
     if (type === "signup") {
       user.isVerified = true;
     }
 
-    // 🔥 Clear OTP بالكامل
+    // 🔥 clear everything
     user.otp = null;
     user.otpExpires = null;
     user.otpPurpose = null;
     user.otpSentAt = null;
+    user.otpAttempts = 0;
 
     await user.save();
 
@@ -273,7 +280,6 @@ exports.verifyOTP = async (req, res) => {
     return sendRes(res, 500, false, err.message);
   }
 };
-
 // ----------------------
 // باقي الدوال (login, forgotPassword, resetPassword, loginWithGoogle, loginWithFacebook, getAccount, updateAccount, deleteAccount)
 // ----------------------
@@ -322,61 +328,83 @@ exports.login = async (req, res) => {
 exports.forgotPassword = async (req, res) => {
   try {
     const { email } = req.body;
+
     const normalizedEmail = email.toLowerCase().trim();
-
     const user = await User.findOne({ email: normalizedEmail });
-    if (!user) return sendRes(res, 404, false, "User not found");
 
-    // توليد OTP عشوائي
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    if (!user) {
+      return sendRes(res, 404, false, "User not found");
+    }
 
-    // تخزينه كـ hash
-    user.otp = await bcrypt.hash(otp, 12);
-    user.otpExpires = Date.now() + 5 * 60 * 1000; // صالح 5 دقائق
+    // ⏱ cooldown
+    if (user.otpSentAt && Date.now() - user.otpSentAt < 30 * 1000) {
+      return sendRes(res, 429, false, "Wait 30 seconds");
+    }
+
+    const otp = generateOTP();
+
+    user.otp = hashOTP(otp);
+    user.otpExpires = Date.now() + 5 * 60 * 1000;
     user.otpPurpose = "reset";
+    user.otpSentAt = Date.now();
+    user.otpAttempts = 0;
+
     await user.save();
 
-    // إرسال الإيميل
     await sendEmail(user.email, "Reset OTP", `Your OTP code is: ${otp}`);
 
     return sendRes(res, 200, true, "OTP sent", {
-      ...includeOtpIfDev(otp), // يظهر الـ OTP في الرد لو بيئة تطوير
+      ...(process.env.NODE_ENV !== "production" && { otp }),
     });
   } catch (err) {
     return sendRes(res, 500, false, err.message);
   }
 };
-
 exports.resetPassword = async (req, res) => {
   try {
     const { email, otp, newPassword } = req.body;
+
     const normalizedEmail = email.toLowerCase().trim();
-
     const user = await User.findOne({ email: normalizedEmail });
-    if (!user) return sendRes(res, 404, false, "User not found");
 
-    // تحقق من الـ OTP
-    const isOtpValid =
-      user.otp &&
-      (await bcrypt.compare(otp, user.otp)) &&
-      Date.now() <= user.otpExpires &&
-      user.otpPurpose === "reset";
+    if (!user) {
+      return sendRes(res, 404, false, "User not found");
+    }
 
-    if (!isOtpValid) {
-      return sendRes(res, 400, false, "Invalid or expired OTP");
+    if (!user.otp || !user.otpExpires || user.otpPurpose !== "reset") {
+      return sendRes(res, 400, false, "Invalid OTP state");
+    }
+
+    if (user.otpAttempts >= 5) {
+      return sendRes(res, 429, false, "Too many attempts");
+    }
+
+    if (Date.now() > new Date(user.otpExpires).getTime()) {
+      return sendRes(res, 400, false, "OTP expired");
+    }
+
+    const hashedIncoming = hashOTP(otp);
+    const isMatch = compareOTP(user.otp, hashedIncoming);
+
+    if (!isMatch) {
+      user.otpAttempts += 1;
+      await user.save();
+      return sendRes(res, 400, false, "Invalid OTP");
     }
 
     if (!newPassword || newPassword.length < 8) {
       return sendRes(res, 400, false, "Password must be at least 8 characters");
     }
 
-    // تحديث كلمة السر
     user.password = await bcrypt.hash(newPassword, 12);
 
-    // مسح الـ OTP بعد الاستخدام
+    // 🔥 clear OTP
     user.otp = null;
     user.otpExpires = null;
     user.otpPurpose = null;
+    user.otpSentAt = null;
+    user.otpAttempts = 0;
+
     await user.save();
 
     return sendRes(res, 200, true, "Password reset successful");

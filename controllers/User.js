@@ -4,128 +4,122 @@ const Station = require("../models/Station");
 const Trip = require("../models/Trip");
 const Seat = require("../models/Seat");
 const Booking = require("../models/Booking");
+const { sendEmail, sendTicketEmail } = require("../services/emailService");
 const QRCode = require("qrcode");
 const mongoose = require("mongoose");
 const jwt = require("jsonwebtoken");
 const axios = require("axios");
-
+const User = require("../models/User"); // ✅ adjust path if needed
 const sendRes = (res, status, success, msg, data = null) => {
   res.status(status).json({ success, msg, data });
 };
 
 exports.searchTrips = async (req, res) => {
   try {
-    const {
-      from,
-      to,
-      date,
-      page = 1,
-      limit = 10,
-      classType, // optional
-    } = req.query;
+    const { from, to, date, page = 1, limit = 10, classType } = req.query;
 
     if (!from || !to) {
       return sendRes(res, 400, false, "from & to required");
     }
 
+    // ✅ validate ObjectId
+    if (
+      !mongoose.Types.ObjectId.isValid(from) ||
+      !mongoose.Types.ObjectId.isValid(to)
+    ) {
+      return sendRes(res, 400, false, "Invalid station IDs");
+    }
+
+    const fromId = new mongoose.Types.ObjectId(from);
+    const toId = new mongoose.Types.ObjectId(to);
+
     const pageNum = Number(page);
     const limitNum = Number(limit);
 
-    // ✅ prepare class filter
+    // ✅ DATE FILTER (SAFE)
+    let dateMatch = {};
+    if (date) {
+      const start = new Date(`${date}T00:00:00.000Z`);
+      const end = new Date(`${date}T23:59:59.999Z`);
+
+      if (isNaN(start) || isNaN(end)) {
+        return sendRes(res, 400, false, "Invalid date");
+      }
+
+      dateMatch = {
+        departureDate: { $gte: start, $lte: end },
+      };
+    }
+
+    // ✅ class filter
     let classFilter = [];
     if (classType) {
       classFilter = Array.isArray(classType) ? classType : [classType];
     }
 
-    // ✅ safer date filter
-    let dateMatch = {};
-    if (date) {
-      const parsed = new Date(date + "T00:00:00.000Z");
-      if (isNaN(parsed)) {
-        return sendRes(res, 400, false, "Invalid date");
-      }
-
-      const nextDay = new Date(parsed);
-      nextDay.setDate(nextDay.getDate() + 1);
-
-      dateMatch = {
-        departureDate: {
-          $gte: parsed,
-          $lt: nextDay,
-        },
-      };
-    }
-
-    // 🔍 البحث بالاسم (Case-insensitive)
-    const fromStation = await Station.findOne({
-      name: new RegExp("^" + from + "$", "i"),
-    });
-    const toStation = await Station.findOne({
-      name: new RegExp("^" + to + "$", "i"),
-    });
-
-    if (!fromStation || !toStation) {
-      return sendRes(res, 404, false, "Stations not found");
-    }
-
-    // 🔥 SINGLE AGGREGATION with pagination + count
     const result = await Trip.aggregate([
       {
         $match: {
-          fromStation: fromStation._id,
-          toStation: toStation._id,
+          fromStation: fromId,
+          toStation: toId,
           status: "scheduled",
           ...dateMatch,
         },
       },
 
-      // 🔗 seats lookup
+      // 🔗 seats
       {
         $lookup: {
           from: "seats",
-          let: { tripId: "$_id" },
-          pipeline: [
-            {
-              $match: {
-                $expr: { $eq: ["$trip", "$$tripId"] },
-                ...(classFilter.length && {
-                  classType: { $in: classFilter },
-                }),
-              },
-            },
-            {
-              $group: {
-                _id: "$trip",
-                total: { $sum: 1 },
-                available: {
-                  $sum: {
-                    $cond: [{ $eq: ["$status", "available"] }, 1, 0],
-                  },
-                },
-              },
-            },
-          ],
-          as: "seatStats",
+          localField: "_id",
+          foreignField: "trip",
+          as: "seats",
         },
       },
 
       {
         $addFields: {
-          seatStats: { $arrayElemAt: ["$seatStats", 0] },
+          totalSeats: { $size: "$seats" },
+          availableSeats: {
+            $size: {
+              $filter: {
+                input: "$seats",
+                as: "s",
+                cond: { $eq: ["$$s.status", "available"] },
+              },
+            },
+          },
         },
       },
 
+      // ✅ class filter (only if provided)
       ...(classFilter.length
         ? [
             {
+              $addFields: {
+                filteredSeats: {
+                  $filter: {
+                    input: "$seats",
+                    as: "s",
+                    cond: {
+                      $and: [
+                        { $in: ["$$s.classType", classFilter] },
+                        { $eq: ["$$s.status", "available"] },
+                      ],
+                    },
+                  },
+                },
+              },
+            },
+            {
               $match: {
-                "seatStats.available": { $gt: 0 },
+                "filteredSeats.0": { $exists: true },
               },
             },
           ]
         : []),
 
-      // 🔗 train lookup
+      // 🔗 train
       {
         $lookup: {
           from: "trains",
@@ -134,9 +128,9 @@ exports.searchTrips = async (req, res) => {
           as: "train",
         },
       },
-      { $unwind: { path: "$train", preserveNullAndEmptyArrays: true } },
+      { $unwind: "$train" },
 
-      // 🔗 stations
+      // 🔗 stations (for names in response)
       {
         $lookup: {
           from: "stations",
@@ -179,26 +173,23 @@ exports.searchTrips = async (req, res) => {
       });
 
     const formattedTrips = trips.map((trip) => {
-      const stats = trip.seatStats || { total: 0, available: 0 };
-
       const durationMs =
         new Date(trip.arrivalDate) - new Date(trip.departureDate);
-
-      const hours = Math.floor(durationMs / (1000 * 60 * 60));
-      const minutes = Math.floor((durationMs % (1000 * 60 * 60)) / (1000 * 60));
 
       return {
         tripId: trip._id,
         trainNumber: trip.train?.number,
-        trainType: trip.train?.type || "VIP",
+        trainType: trip.train?.type,
         from: trip.fromStation?.name,
         to: trip.toStation?.name,
         departureTime: formatTime(trip.departureDate),
         arrivalTime: formatTime(trip.arrivalDate),
-        duration: `${hours}h ${minutes}m`,
-        price: trip.price || 350,
-        availableTickets: stats.available,
-        stops: trip.stops?.length || 0,
+        duration: `${Math.floor(durationMs / 3600000)}h ${Math.floor(
+          (durationMs % 3600000) / 60000,
+        )}m`,
+        price: trip.price,
+        availableTickets: trip.availableSeats,
+        totalSeats: trip.totalSeats,
       };
     });
 
@@ -211,7 +202,7 @@ exports.searchTrips = async (req, res) => {
       },
     });
   } catch (err) {
-    console.error(err);
+    console.error("SEARCH ERROR:", err);
     return sendRes(res, 500, false, "Error fetching trips");
   }
 };
@@ -232,16 +223,20 @@ exports.getTripRoute = async (req, res) => {
       return sendRes(res, 404, false, "Trip not found");
     }
 
-    // ✅ Build route using stops (NOT global stations)
     const route = [
-      { name: trip.fromStation.name },
-      ...(trip.stops || []).map((s) => ({
-        name: s.station?.name,
-        arrivalTime: s.arrivalTime,
-        departureTime: s.departureTime,
-      })),
-      { name: trip.toStation.name },
-    ];
+      trip.fromStation && { name: trip.fromStation.name },
+
+      ...(trip.stops || [])
+        .filter((s) => s.station)
+        .sort((a, b) => new Date(a.arrivalTime) - new Date(b.arrivalTime))
+        .map((s) => ({
+          name: s.station.name,
+          arrivalTime: s.arrivalTime,
+          departureTime: s.departureTime,
+        })),
+
+      trip.toStation && { name: trip.toStation.name },
+    ].filter(Boolean);
 
     return sendRes(res, 200, true, "Route fetched", {
       tripId,
@@ -254,11 +249,18 @@ exports.getTripRoute = async (req, res) => {
 };
 exports.getAllStations = async (req, res) => {
   try {
-    const stations = await Station.find().select("_id name");
+    const stations = await Station.find({ status: "active" })
+      .select("_id name")
+      .sort({ name: 1 }) // ✅ sorted alphabetically
+      .lean();
+
     return res.status(200).json({
       success: true,
       msg: "Stations fetched successfully",
-      data: stations,
+      data: stations.map((s) => ({
+        id: s._id,
+        name: s.name,
+      })),
     });
   } catch (err) {
     return res.status(500).json({
@@ -326,7 +328,7 @@ exports.holdSeat = async (req, res) => {
 
     const now = new Date();
 
-    // limit holds
+    // ✅ limit holds per user
     const activeHolds = await Seat.countDocuments({
       reservedBy: req.user.id,
       status: "reserved",
@@ -334,7 +336,7 @@ exports.holdSeat = async (req, res) => {
     });
 
     if (activeHolds >= 5) {
-      return sendRes(res, 400, false, "Hold limit reached");
+      return sendRes(res, 400, false, "Hold limit reached (max 5)");
     }
 
     const seat = await Seat.findOneAndUpdate(
@@ -356,39 +358,68 @@ exports.holdSeat = async (req, res) => {
         },
       },
       { new: true },
-    );
+    ).lean();
 
     if (!seat) {
       return sendRes(res, 400, false, "Seat not available");
     }
 
-    return sendRes(res, 200, true, "Seat held", seat);
+    return sendRes(res, 200, true, "Seat held", {
+      seatId: seat._id,
+      status: seat.status,
+      expiresAt: seat.expireAt,
+    });
   } catch (err) {
     return sendRes(res, 500, false, "Server error");
   }
 };
 exports.confirmPayment = async (req, res) => {
   const session = await mongoose.startSession();
-  session.startTransaction();
+  let committed = false; // 🔥 track commit state
+
+  const SKIP_PAYMENT = process.env.SKIP_PAYMENT === "true";
 
   try {
+    session.startTransaction();
+
     let { seatIds, passengers, transactionId } = req.body;
 
-    if (!seatIds || !Array.isArray(seatIds) || !seatIds.length) {
+    // 🔴 VALIDATION
+    if (!seatIds || !Array.isArray(seatIds) || seatIds.length === 0) {
       throw new Error("seatIds required");
     }
 
-    if (!passengers || passengers.length !== seatIds.length) {
-      throw new Error("Passengers must match seats");
+    if (!passengers || !Array.isArray(passengers)) {
+      throw new Error("Passengers array required");
     }
 
-    if (!transactionId) {
+    if (passengers.length !== seatIds.length) {
+      throw new Error("Passengers must match number of seats");
+    }
+
+    for (const p of passengers) {
+      if (!p.name) throw new Error("Passenger name required");
+    }
+
+    if (!transactionId && !SKIP_PAYMENT) {
       throw new Error("Transaction ID required");
+    }
+
+    if (SKIP_PAYMENT && !transactionId) {
+      transactionId = "TEST_" + Date.now();
     }
 
     const now = new Date();
 
-    // 🔒 get seats
+    // 🚨 prevent replay attack (ONLY real mode)
+    if (!SKIP_PAYMENT) {
+      const existingBooking = await Booking.findOne({ transactionId }).session(
+        session,
+      );
+      if (existingBooking) throw new Error("Transaction already used");
+    }
+
+    // 🔒 GET SEATS
     const seats = await Seat.find({
       _id: { $in: seatIds },
     }).session(session);
@@ -397,51 +428,73 @@ exports.confirmPayment = async (req, res) => {
       throw new Error("Invalid seats");
     }
 
-    // 🔒 validate
+    // 🚨 same trip check
+    const tripId = seats[0].trip.toString();
+    if (!seats.every((s) => s.trip.toString() === tripId)) {
+      throw new Error("Seats must belong to same trip");
+    }
+
+    // 🔥 FLEXIBLE VALIDATION
     for (const s of seats) {
-      if (
-        s.status !== "reserved" ||
-        s.reservedBy?.toString() !== req.user.id ||
-        s.expireAt < now
-      ) {
-        throw new Error("Seat expired or not yours");
+      if (s.status === "booked") {
+        throw new Error(`Seat ${s.seatNumber} already booked`);
+      }
+
+      if (s.status === "reserved") {
+        if (s.expireAt < now) {
+          throw new Error(`Seat ${s.seatNumber} reservation expired`);
+        }
+
+        if (s.reservedBy?.toString() !== req.user.id) {
+          throw new Error(`Seat ${s.seatNumber} reserved by another user`);
+        }
       }
     }
 
-    // 💰 total price
+    // 💰 PRICE
     const totalPrice = seats.reduce((sum, s) => sum + s.price, 0);
 
-    // 💳 VERIFY PAYMENT
-    const auth = await axios.post("https://accept.paymob.com/api/auth/tokens", {
-      api_key: process.env.PAYMOB_API_KEY,
-    });
+    // 💳 PAYMENT CHECK
+    if (!SKIP_PAYMENT) {
+      const auth = await axios.post(
+        "https://accept.paymob.com/api/auth/tokens",
+        { api_key: process.env.PAYMOB_API_KEY },
+      );
 
-    const token = auth.data.token;
+      const token = auth.data.token;
 
-    const trx = await axios.get(
-      `https://accept.paymob.com/api/acceptance/transactions/${transactionId}`,
-      {
-        headers: { Authorization: `Bearer ${token}` },
-      },
-    );
+      const trx = await axios.get(
+        `https://accept.paymob.com/api/acceptance/transactions/${transactionId}`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
 
-    const payment = trx.data;
+      const payment = trx.data;
 
-    if (!payment || !payment.success || payment.pending) {
-      throw new Error("Payment not valid");
+      if (!payment || !payment.success || payment.pending) {
+        throw new Error("Payment not valid");
+      }
+
+      if (payment.amount_cents !== totalPrice * 100) {
+        throw new Error("Amount mismatch");
+      }
+    } else {
+      console.log("⚠️ TEST MODE: Payment skipped");
     }
 
-    if (payment.amount_cents !== totalPrice * 100) {
-      throw new Error("Amount mismatch");
-    }
-
-    // 🔥 ATOMIC UPDATE
+    // 🔥 ATOMIC UPDATE (CORE LOGIC)
     const updated = await Seat.updateMany(
       {
         _id: { $in: seatIds },
-        status: "reserved",
-        reservedBy: req.user.id,
-        expireAt: { $gt: now },
+        $or: [
+          { status: "available" },
+          {
+            status: "reserved",
+            reservedBy: req.user.id,
+            expireAt: { $gt: now },
+          },
+        ],
       },
       {
         $set: {
@@ -455,25 +508,27 @@ exports.confirmPayment = async (req, res) => {
     );
 
     if (updated.modifiedCount !== seatIds.length) {
-      throw new Error("Seats no longer available");
+      throw new Error("Some seats are no longer available");
     }
 
-    // 🎟️ create booking with extended passenger info
-    const booking = await Booking.create(
+    // 🎟️ CREATE BOOKING
+    const [booking] = await Booking.create(
       [
         {
           user: req.user.id,
-          trip: seats[0].trip,
+          trip: tripId,
           seats: seatIds,
-          passengers: passengers.map((p) => ({
-            fullName: p.fullName,
-            middleName: p.middleName,
-            phoneNumber: p.phoneNumber,
-            nationalId: p.nationalId,
-            profileType: p.profileType,
-            email: p.email,
-            nationality: p.nationality,
+
+          passengers: passengers.map((p, i) => ({
+            name: p.name,
+            age: p.age || null,
+            gender: p.gender || null,
+            nationalId: p.nationalId || null,
+            phone: p.phone || null,
+            email: p.email || null,
+            seatId: seatIds[i],
           })),
+
           paymentStatus: "paid",
           transactionId,
           paidAt: now,
@@ -484,54 +539,142 @@ exports.confirmPayment = async (req, res) => {
 
     // 🎫 QR
     const qrToken = jwt.sign(
-      { bookingId: booking[0]._id },
+      { bookingId: booking._id },
       process.env.QR_SECRET,
       { expiresIn: "6h" },
     );
 
-    booking[0].qrCode = await QRCode.toDataURL(qrToken);
-    await booking[0].save({ session });
+    booking.qrCode = await QRCode.toDataURL(qrToken);
+    await booking.save({ session });
 
-    // 🗂️ add booking to user history
-    await User.findByIdAndUpdate(req.user.id, {
-      $push: { history: booking[0]._id },
-    });
+    // 🗂️ USER HISTORY
+    await User.findByIdAndUpdate(
+      req.user.id,
+      { $push: { history: booking._id } },
+      { session },
+    );
 
-    // 📧 send ticket email (يمكنك تضمين الحقول الجديدة هنا لو عايز)
-    await sendTicketEmail(req.user.email, {
-      userName: req.user.name,
-      trainNumber: seats[0].trainNumber,
-      fromStation: seats[0].fromStation,
-      toStation: seats[0].toStation,
-      seatNumbers: seats.map((s) => s.seat_number),
-      date: seats[0].tripDate,
-      price: totalPrice,
-      qrCode: booking[0].qrCode,
-    });
-
+    // ✅ COMMIT
     await session.commitTransaction();
-    session.endSession();
+    committed = true;
+    console.log("USER OBJECT:", req.user);
+    console.log("EMAIL VALUE:", req.user?.email);
+    // 📧 EMAIL AFTER COMMIT
+    // 📨 collect emails
+    const emails = passengers
+      .map((p) => p.email)
+      .filter((email) => email && email.trim() !== "");
 
+    if (emails.length === 0 && req.user?.email) {
+      emails.push(req.user.email);
+    }
+
+    // 🚨 safety check
+    if (emails.length === 0) {
+      console.warn("⚠️ No email recipients found — skipping email");
+    } else {
+      try {
+        await sendTicketEmail(emails.join(","), {
+          userName: req.user?.name || "Passenger",
+          seatNumbers: seats.map((s) => s.seatNumber),
+          passengers,
+          totalPrice,
+          qrCode: booking.qrCode,
+        });
+      } catch (emailErr) {
+        console.error("❌ Email failed:", emailErr.message);
+      }
+    }
     return sendRes(res, 200, true, "Booking confirmed", {
-      booking: booking[0],
-      totalPrice,
+      booking: {
+        id: booking._id,
+        trip: booking.trip,
+        seats: booking.seats,
+        passengers: booking.passengers,
+        totalPrice,
+      },
     });
   } catch (err) {
-    await session.abortTransaction();
-    session.endSession();
+    // ❌ abort ONLY if not committed
+    if (!committed) {
+      await session.abortTransaction();
+    }
+
+    console.error("CONFIRM PAYMENT ERROR:", err);
 
     return sendRes(res, 500, false, err.message);
+  } finally {
+    session.endSession(); // 🔥 ALWAYS end session
   }
 };
 exports.getMyBooks = async (req, res) => {
   try {
+    const { page = 1, limit = 10 } = req.query;
+
+    const pageNum = Number(page);
+    const limitNum = Number(limit);
+
     const bookings = await Booking.find({ user: req.user.id })
-      .populate("trip")
-      .populate("seats") // ✅ FIX
+      .populate({
+        path: "trip",
+        select: "departureDate arrivalDate",
+        populate: [
+          { path: "fromStation", select: "name" },
+          { path: "toStation", select: "name" },
+          { path: "train", select: "number type" },
+        ],
+      })
+      .populate({
+        path: "seats",
+        select: "seatNumber class coach price status",
+      })
       .sort({ createdAt: -1 })
+      .skip((pageNum - 1) * limitNum)
+      .limit(limitNum)
       .lean();
 
-    return sendRes(res, 200, true, "Bookings fetched", bookings);
+    const total = await Booking.countDocuments({ user: req.user.id });
+
+    const formatTime = (d) =>
+      new Date(d).toLocaleTimeString("en-US", {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+
+    const formatted = bookings.map((b) => ({
+      bookingId: b._id,
+      tripId: b.trip?._id,
+      trainNumber: b.trip?.train?.number,
+      trainType: b.trip?.train?.type,
+      from: b.trip?.fromStation?.name,
+      to: b.trip?.toStation?.name,
+      departureTime: formatTime(b.trip?.departureDate),
+      arrivalTime: formatTime(b.trip?.arrivalDate),
+
+      // ✅ seats بشكل أوضح
+      seats: (b.seats || []).map((s) => ({
+        id: s._id,
+        number: s.seatNumber,
+        class: s.class,
+        coach: s.coach,
+        price: s.price,
+        status: s.status,
+      })),
+
+      passengers: b.passengers,
+      totalSeats: b.seats?.length || 0,
+      paymentStatus: b.paymentStatus,
+      bookedAt: b.createdAt,
+    }));
+
+    return sendRes(res, 200, true, "Bookings fetched", {
+      bookings: formatted,
+      pagination: {
+        total,
+        page: pageNum,
+        totalPages: Math.ceil(total / limitNum),
+      },
+    });
   } catch (err) {
     console.error("getMyBooks:", err);
     return sendRes(res, 500, false, "Server error");
@@ -551,40 +694,68 @@ exports.cancelBooking = async (req, res) => {
     const booking = await Booking.findOne({
       _id: id,
       user: req.user.id,
-    }).session(session);
+    })
+      .populate("trip")
+      .session(session);
 
     if (!booking) {
       throw new Error("Booking not found");
     }
 
+    // ✅ prevent double cancel
     if (booking.status === "cancelled") {
       throw new Error("Booking already cancelled");
     }
 
-    // 🔥 release ALL seats
-    await Seat.updateMany(
-      { _id: { $in: booking.seats } },
+    // 🚨 prevent cancel after trip start
+    const now = new Date();
+    if (booking.trip && new Date(booking.trip.departureDate) <= now) {
+      throw new Error("Cannot cancel after trip departure");
+    }
+
+    // 🔥 release ONLY booked seats safely
+    const updated = await Seat.updateMany(
+      {
+        _id: { $in: booking.seats },
+        status: "booked",
+      },
       {
         $set: {
           status: "available",
           reservedBy: null,
           reservedAt: null,
           expireAt: null,
+          bookedAt: null,
         },
       },
       { session },
     );
 
-    // 🔥 mark booking cancelled
+    if (updated.modifiedCount === 0) {
+      throw new Error("Seats already released or invalid");
+    }
+
+    // 💰 refund logic (safe)
+    if (booking.paymentStatus === "paid") {
+      booking.paymentStatus = "refunded";
+      booking.refundedAt = now;
+    }
+
+    // 🔥 mark cancelled
     booking.status = "cancelled";
-    booking.paymentStatus = "refunded"; // optional depending on logic
+    booking.cancelledAt = now;
 
     await booking.save({ session });
 
     await session.commitTransaction();
     session.endSession();
 
-    return sendRes(res, 200, true, "Booking cancelled", booking);
+    return sendRes(res, 200, true, "Booking cancelled", {
+      bookingId: booking._id,
+      status: booking.status,
+      paymentStatus: booking.paymentStatus,
+      cancelledAt: booking.cancelledAt,
+    });
   } catch (err) {
     await session.abortTransaction();
     session.endSession();
