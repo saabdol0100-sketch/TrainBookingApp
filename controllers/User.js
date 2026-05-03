@@ -523,7 +523,6 @@ exports.confirmPayment = async (req, res) => {
     return sendRes(res, 500, false, err.message);
   }
 };
-
 exports.getMyBooks = async (req, res) => {
   try {
     const bookings = await Booking.find({ user: req.user.id })

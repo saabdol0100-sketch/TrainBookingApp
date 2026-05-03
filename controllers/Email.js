@@ -173,25 +173,38 @@ exports.signup = async (req, res) => {
 exports.resendOTP = async (req, res) => {
   try {
     const { email, type } = req.body;
+
+    if (!email || !type) {
+      return sendRes(res, 400, false, "Missing fields");
+    }
+
     if (!["signup", "reset"].includes(type)) {
       return sendRes(res, 400, false, "Invalid type");
     }
 
     const normalizedEmail = email.toLowerCase().trim();
     const user = await User.findOne({ email: normalizedEmail });
-    if (!user) return sendRes(res, 404, false, "User not found");
 
-    if (user.otpExpires && Date.now() < user.otpExpires - 9.5 * 60 * 1000) {
+    if (!user) {
+      return sendRes(res, 404, false, "User not found");
+    }
+
+    // منع السبام (30 ثانية بين كل OTP)
+    if (user.otpSentAt && Date.now() - user.otpSentAt < 30 * 1000) {
       return sendRes(res, 429, false, "Wait 30 seconds");
     }
 
     const otp = generateOTP();
-    user.otp = hashOTP(otp);
-    user.otpExpires = Date.now() + 10 * 60 * 1000;
+
+    user.otp = await hashOTP(otp);
+    user.otpExpires = Date.now() + 10 * 60 * 1000; // 10 دقائق
     user.otpPurpose = type;
+    user.otpSentAt = Date.now();
+    user.otpAttempts = 0;
+
     await user.save();
 
-    await sendEmail(user.email, "OTP", `OTP: ${otp}`);
+    await sendEmail(user.email, "OTP Code", `Your OTP is: ${otp}`);
 
     return sendRes(res, 200, true, "OTP resent", {
       ...(process.env.NODE_ENV !== "production" && { otp }),
@@ -200,43 +213,60 @@ exports.resendOTP = async (req, res) => {
     return sendRes(res, 500, false, err.message);
   }
 };
-
 // ----------------------
 // Verify OTP
 // ----------------------
 exports.verifyOTP = async (req, res) => {
   try {
     const { email, otp, type } = req.body;
+
     if (!email || !otp || !type) {
       return sendRes(res, 400, false, "Missing fields");
     }
 
     const normalizedEmail = email.toLowerCase().trim();
     const user = await User.findOne({ email: normalizedEmail });
-    if (!user) return sendRes(res, 404, false, "User not found");
 
-    // تحقق من الـ OTP باستخدام bcrypt
-    const isOtpValid =
-      user.otp &&
-      (await bcrypt.compare(otp, user.otp)) &&
-      Date.now() <= user.otpExpires &&
-      user.otpPurpose === type;
-
-    if (!isOtpValid) {
-      return sendRes(res, 400, false, "Invalid or expired OTP");
+    if (!user) {
+      return sendRes(res, 404, false, "User not found");
     }
 
+    if (!user.otp || !user.otpExpires || !user.otpPurpose) {
+      return sendRes(res, 400, false, "No OTP found");
+    }
+
+    if (user.otpPurpose !== type) {
+      return sendRes(res, 400, false, "OTP type mismatch");
+    }
+
+    if (Date.now() > new Date(user.otpExpires).getTime()) {
+      return sendRes(res, 400, false, "OTP expired");
+    }
+
+    // ✅ HASH incoming OTP same way
+    const hashedIncoming = hashOTP(otp);
+
+    // ✅ SAFE compare
+    const isMatch = compareOTP(user.otp, hashedIncoming);
+
+    if (!isMatch) {
+      return sendRes(res, 400, false, "Invalid OTP");
+    }
+
+    // ✅ Success
     if (type === "signup") {
       user.isVerified = true;
-      // امسح الـ OTP بعد التحقق من signup فقط
-      user.otp = null;
-      user.otpExpires = null;
-      user.otpPurpose = null;
     }
+
+    // 🔥 Clear OTP بالكامل
+    user.otp = null;
+    user.otpExpires = null;
+    user.otpPurpose = null;
+    user.otpSentAt = null;
 
     await user.save();
 
-    return sendRes(res, 200, true, "OTP verified", {
+    return sendRes(res, 200, true, "OTP verified successfully", {
       ...(type === "signup" && { token: generateToken(user) }),
     });
   } catch (err) {
