@@ -1,6 +1,5 @@
 const mongoose = require("mongoose");
-const { v4: uuidv4 } = require("uuid");
-
+const { randomUUID } = require("crypto");
 const bookingSchema = new mongoose.Schema(
   {
     user: {
@@ -84,7 +83,7 @@ const bookingSchema = new mongoose.Schema(
 
 bookingSchema.pre("save", function () {
   if (!this.bookingRef) {
-    this.bookingRef = "BK-" + uuidv4();
+    this.bookingRef = "BK-" + randomUUID();
   }
 });
 

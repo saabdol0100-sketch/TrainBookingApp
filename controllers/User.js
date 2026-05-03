@@ -1,5 +1,5 @@
 const crypto = require("crypto");
-const { v4: uuidv4 } = require("uuid");
+const { randomUUID } = require("crypto");
 const Station = require("../models/Station");
 const Trip = require("../models/Trip");
 const Seat = require("../models/Seat");
