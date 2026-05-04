@@ -15,7 +15,7 @@ router.post("/seats/:seatId/hold", ...userOnly, usersController.holdSeat);
 router.post("/bookings/pay", ...userOnly, usersController.confirmPayment);
 router.get("/bookings", ...userOnly, usersController.getMyBooks);
 router.delete("/bookings/:id", ...userOnly, usersController.cancelBooking);
-
+router.post("/payment", ...userOnly, usersController.processPayment);
 module.exports = router;
 
 //! 7 Methods :

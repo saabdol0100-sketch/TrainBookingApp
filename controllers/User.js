@@ -894,6 +894,30 @@ exports.cancelBooking = async (req, res) => {
     session.endSession();
   }
 };
+exports.processPayment = async (req, res) => {
+  try {
+    const { method, walletNumber, amount } = req.body;
+
+    // إرسال البيانات لمزود الخدمة (مثال)
+    const response = await axios.post("https://provider.com/api/pay", {
+      method,
+      walletNumber,
+      amount,
+    });
+
+    // استلام النتيجة من المزود
+    const { transactionId, status } = response.data;
+
+    // إرسال النتيجة للفرونت
+    res.json({
+      success: status === "success",
+      transactionId,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: "Payment failed" });
+  }
+};
+
 //! 7 Methods :
 //?----------------
 //todo searchTrips
