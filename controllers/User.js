@@ -386,23 +386,18 @@ exports.confirmPayment = async (req, res) => {
     if (!seatIds || !Array.isArray(seatIds) || seatIds.length === 0) {
       throw new Error("seatIds required");
     }
-
     if (!passengers || !Array.isArray(passengers)) {
       throw new Error("Passengers array required");
     }
-
     if (passengers.length !== seatIds.length) {
       throw new Error("Passengers must match number of seats");
     }
-
     for (const p of passengers) {
       if (!p.name) throw new Error("Passenger name required");
     }
-
     if (!transactionId && !SKIP_PAYMENT) {
       throw new Error("Transaction ID required");
     }
-
     if (SKIP_PAYMENT && !transactionId) {
       transactionId = "TEST_" + Date.now();
     }
@@ -418,13 +413,8 @@ exports.confirmPayment = async (req, res) => {
     }
 
     // 🔒 GET SEATS
-    const seats = await Seat.find({
-      _id: { $in: seatIds },
-    }).session(session);
-
-    if (seats.length !== seatIds.length) {
-      throw new Error("Invalid seats");
-    }
+    const seats = await Seat.find({ _id: { $in: seatIds } }).session(session);
+    if (seats.length !== seatIds.length) throw new Error("Invalid seats");
 
     // 🚨 same trip check
     const tripId = seats[0].trip.toString();
@@ -434,15 +424,11 @@ exports.confirmPayment = async (req, res) => {
 
     // 🔥 VALIDATION (availability)
     for (const s of seats) {
-      if (s.status === "booked") {
+      if (s.status === "booked")
         throw new Error(`Seat ${s.seatNumber} already booked`);
-      }
-
       if (s.status === "reserved") {
-        if (s.expireAt < now) {
+        if (s.expireAt < now)
           throw new Error(`Seat ${s.seatNumber} reservation expired`);
-        }
-
         if (s.reservedBy?.toString() !== req.user.id) {
           throw new Error(`Seat ${s.seatNumber} reserved by another user`);
         }
@@ -456,27 +442,22 @@ exports.confirmPayment = async (req, res) => {
     if (!SKIP_PAYMENT) {
       const auth = await axios.post(
         "https://accept.paymob.com/api/auth/tokens",
-        { api_key: process.env.PAYMOB_API_KEY },
+        {
+          api_key: process.env.PAYMOB_API_KEY,
+        },
       );
-
       const token = auth.data.token;
 
       const trx = await axios.get(
         `https://accept.paymob.com/api/acceptance/transactions/${transactionId}`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        },
+        { headers: { Authorization: `Bearer ${token}` } },
       );
 
       const payment = trx.data;
-
-      if (!payment || !payment.success || payment.pending) {
+      if (!payment || !payment.success || payment.pending)
         throw new Error("Payment not valid");
-      }
-
-      if (payment.amount_cents !== totalPrice * 100) {
+      if (payment.amount_cents !== totalPrice * 100)
         throw new Error("Amount mismatch");
-      }
     } else {
       console.log("⚠️ TEST MODE: Payment skipped");
     }
@@ -504,25 +485,24 @@ exports.confirmPayment = async (req, res) => {
       },
       { session },
     );
-
-    if (updated.modifiedCount !== seatIds.length) {
+    if (updated.modifiedCount !== seatIds.length)
       throw new Error("Some seats are no longer available");
-    }
 
-    // 🎟️ CREATE BOOKING (🔥 FIXED PART HERE)
+    // 🎟️ CREATE BOOKING
+    const bookingCode = "BOOK_" + Date.now(); // كود رئيسي للحجز
+
     const [booking] = await Booking.create(
       [
         {
           user: req.user.id,
           trip: tripId,
           seats: seatIds,
+          bookingCode, // 🔥 الكود الرئيسي
 
           passengers: passengers.map((p, i) => {
             const seatId = seatIds[i];
-
-            if (!mongoose.Types.ObjectId.isValid(seatId)) {
+            if (!mongoose.Types.ObjectId.isValid(seatId))
               throw new Error("Invalid seat mapping");
-            }
 
             return {
               name: p.name,
@@ -531,8 +511,9 @@ exports.confirmPayment = async (req, res) => {
               nationalId: p.nationalId || null,
               phone: p.phone || null,
               email: p.email?.toLowerCase().trim() || null,
-
-              seatId, // 🔥 أهم إضافة
+              seatId,
+              ticketPrice: seats[i].price, // 🔥 سعر التذكرة
+              ticketCode: "TICKET_" + seatId + "_" + Date.now(), // 🔥 كود فردي لكل راكب
             };
           }),
 
@@ -550,7 +531,6 @@ exports.confirmPayment = async (req, res) => {
       process.env.QR_SECRET,
       { expiresIn: "6h" },
     );
-
     booking.qrCode = await QRCode.toDataURL(qrToken);
     await booking.save({ session });
 
@@ -569,10 +549,7 @@ exports.confirmPayment = async (req, res) => {
     const emails = passengers
       .map((p) => p.email)
       .filter((email) => email && email.trim() !== "");
-
-    if (emails.length === 0 && req.user?.email) {
-      emails.push(req.user.email);
-    }
+    if (emails.length === 0 && req.user?.email) emails.push(req.user.email);
 
     if (emails.length > 0) {
       try {
@@ -582,6 +559,7 @@ exports.confirmPayment = async (req, res) => {
           passengers,
           totalPrice,
           qrCode: booking.qrCode,
+          bookingCode, // 🔥 الكود الرئيسي يظهر في الإيميل
         });
       } catch (emailErr) {
         console.error("❌ Email failed:", emailErr.message);
@@ -595,15 +573,12 @@ exports.confirmPayment = async (req, res) => {
         seats: booking.seats,
         passengers: booking.passengers,
         totalPrice,
+        bookingCode, // 🔥 الكود الرئيسي في الرد
       },
     });
   } catch (err) {
-    if (!committed) {
-      await session.abortTransaction();
-    }
-
+    if (!committed) await session.abortTransaction();
     console.error("CONFIRM PAYMENT ERROR:", err);
-
     return sendRes(res, 500, false, err.message);
   } finally {
     session.endSession();
@@ -720,6 +695,30 @@ exports.getMyBooks = async (req, res) => {
     return sendRes(res, 500, false, "Server error");
   }
 };
+
+async function refundPayment(transactionId, amountCents) {
+  try {
+    // 1. احصل على token باستخدام API_KEY
+    const auth = await axios.post("https://accept.paymob.com/api/auth/tokens", {
+      api_key: process.env.PAYMOB_API_KEY,
+    });
+
+    const token = auth.data.token;
+
+    // 2. ابعت طلب refund (جزئي أو كامل)
+    const refund = await axios.post(
+      "https://accept.paymob.com/api/acceptance/void_refund/refund",
+      { transaction_id: transactionId, amount_cents: amountCents },
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+
+    return refund.data;
+  } catch (err) {
+    console.error("❌ Refund failed:", err.response?.data || err.message);
+    return null;
+  }
+}
+
 exports.cancelBooking = async (req, res) => {
   const session = await mongoose.startSession();
   let committed = false;
@@ -730,6 +729,7 @@ exports.cancelBooking = async (req, res) => {
     const { id } = req.params;
     const userId = req.user.id;
     const userEmail = req.user.email?.toLowerCase();
+    const now = new Date();
 
     // 🔴 validate booking id
     if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -740,16 +740,17 @@ exports.cancelBooking = async (req, res) => {
       .populate("trip")
       .session(session);
 
-    if (!booking) {
-      throw new Error("Booking not found");
-    }
-
-    const now = new Date();
+    if (!booking) throw new Error("Booking not found");
 
     // 🚫 منع الإلغاء بعد الرحلة
     if (booking.trip && new Date(booking.trip.departureDate) <= now) {
       throw new Error("Cannot cancel after trip departure");
     }
+
+    // 🕒 شرط الاسترجاع قبل 24 ساعة من الرحلة
+    const refundDeadline = new Date(booking.trip.departureDate);
+    refundDeadline.setHours(refundDeadline.getHours() - 24);
+    const allowRefund = now < refundDeadline;
 
     // =========================================================
     // 👤 OWNER → FULL CANCEL
@@ -760,11 +761,8 @@ exports.cancelBooking = async (req, res) => {
       }
 
       // 🎯 release ALL seats
-      const updated = await Seat.updateMany(
-        {
-          _id: { $in: booking.seats },
-          status: "booked",
-        },
+      await Seat.updateMany(
+        { _id: { $in: booking.seats }, status: "booked" },
         {
           $set: {
             status: "available",
@@ -776,30 +774,42 @@ exports.cancelBooking = async (req, res) => {
         { session },
       );
 
-      if (updated.modifiedCount === 0) {
-        console.warn("⚠️ No seats were updated (already free?)");
-      }
-
-      // 💰 refund
+      // 💰 refund logic (كامل)
       if (booking.paymentStatus === "paid") {
-        booking.paymentStatus = "refunded";
-        booking.refundedAt = now;
+        if (allowRefund) {
+          const refundResult = await refundPayment(
+            booking.transactionId,
+            booking.passengers.reduce(
+              (sum, p) => sum + (p.ticketPrice || 0),
+              0,
+            ) * 100,
+          );
+          if (refundResult && refundResult.success) {
+            booking.paymentStatus = "refunded";
+            booking.refundedAt = now;
+          } else {
+            throw new Error("Refund request failed");
+          }
+        } else {
+          booking.paymentStatus = "non_refundable";
+        }
       }
 
       booking.status = "cancelled";
       booking.cancelledAt = now;
 
-      // 🔥 soft delete all passengers
+      // 🔥 soft delete passengers
       booking.passengers.forEach((p) => {
         if (!p.cancelled) {
           p.cancelled = true;
           p.cancelledAt = now;
           p.cancelledBy = userId;
+          p.refunded = booking.paymentStatus === "refunded";
+          p.amountRefunded = p.ticketPrice || 0;
         }
       });
 
       await booking.save({ session });
-
       await session.commitTransaction();
       committed = true;
 
@@ -809,37 +819,20 @@ exports.cancelBooking = async (req, res) => {
     // =========================================================
     // 👥 PASSENGER → PARTIAL CANCEL
     // =========================================================
-
     const passengerIndex = booking.passengers.findIndex(
       (p) => p.email?.toLowerCase() === userEmail,
     );
 
-    if (passengerIndex === -1) {
-      throw new Error("Not authorized");
-    }
+    if (passengerIndex === -1) throw new Error("Not authorized");
 
     const passenger = booking.passengers[passengerIndex];
+    if (passenger.cancelled) throw new Error("Passenger already cancelled");
 
-    if (passenger.cancelled) {
-      throw new Error("Passenger already cancelled");
-    }
-
-    // 🔥🔥🔥 SMART FALLBACK
     const seatId = passenger.seatId || booking.seats?.[passengerIndex];
 
-    if (!seatId || !mongoose.Types.ObjectId.isValid(seatId)) {
-      console.warn("⚠️ No valid seatId → cancel without releasing seat");
-
-      passenger.cancelled = true;
-      passenger.cancelledAt = now;
-      passenger.cancelledBy = userId;
-    } else {
-      // 🎯 release ONLY his seat
-      const seatUpdate = await Seat.updateOne(
-        {
-          _id: seatId,
-          status: "booked",
-        },
+    if (seatId && mongoose.Types.ObjectId.isValid(seatId)) {
+      await Seat.updateOne(
+        { _id: seatId, status: "booked" },
         {
           $set: {
             status: "available",
@@ -850,70 +843,97 @@ exports.cancelBooking = async (req, res) => {
         },
         { session },
       );
-
-      if (seatUpdate.modifiedCount === 0) {
-        console.warn("⚠️ Seat already free or mismatch");
-      }
-
-      // ✅ soft delete passenger
-      passenger.cancelled = true;
-      passenger.cancelledAt = now;
-      passenger.cancelledBy = userId;
     }
 
-    // 🔥 check remaining passengers
+    passenger.cancelled = true;
+    passenger.cancelledAt = now;
+    passenger.cancelledBy = userId;
+
+    // 💰 REFUND جزئي
+    if (booking.paymentStatus === "paid" && allowRefund) {
+      const refundAmount = (passenger.ticketPrice || 0) * 100;
+      const refundResult = await refundPayment(
+        booking.transactionId,
+        refundAmount,
+      );
+
+      if (refundResult && refundResult.success) {
+        passenger.refunded = true;
+        passenger.refundedAt = now;
+        passenger.amountRefunded = passenger.ticketPrice || 0;
+      } else {
+        throw new Error("Refund request failed");
+      }
+    }
+
     const activePassengers = booking.passengers.filter((p) => !p.cancelled);
 
     // 🔥 لو كل الركاب اتلغوا → الغي الحجز كله
     if (activePassengers.length === 0) {
       booking.status = "cancelled";
 
-      if (booking.paymentStatus === "paid") {
+      if (booking.paymentStatus === "paid" && allowRefund) {
         booking.paymentStatus = "refunded";
         booking.refundedAt = now;
+      } else {
+        booking.paymentStatus = "non_refundable";
       }
     }
 
     await booking.save({ session });
-
     await session.commitTransaction();
     committed = true;
 
     return sendRes(res, 200, true, "Passenger cancelled successfully", {
       remainingPassengers: activePassengers.length,
+      refunded: passenger.refunded || false,
+      amountRefunded: passenger.amountRefunded || 0,
     });
   } catch (err) {
-    if (!committed) {
-      await session.abortTransaction();
-    }
-
+    if (!committed) await session.abortTransaction();
     console.error("cancelBooking:", err);
-
     return sendRes(res, 500, false, err.message);
   } finally {
     session.endSession();
   }
 };
+
 exports.processPayment = async (req, res) => {
   try {
     const { method, walletNumber, amount } = req.body;
 
-    // إرسال البيانات لمزود الخدمة (مثال)
+    if (!method || !walletNumber || !amount || amount <= 0) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid payment data" });
+    }
+
+    // إرسال البيانات لمزود الخدمة
     const response = await axios.post("https://provider.com/api/pay", {
       method,
       walletNumber,
       amount,
     });
 
-    // استلام النتيجة من المزود
     const { transactionId, status } = response.data;
 
-    // إرسال النتيجة للفرونت
+    // تخزين العملية في قاعدة البيانات
+    await Payment.create({
+      method,
+      walletNumber,
+      amount,
+      transactionId,
+      status,
+      createdAt: new Date(),
+    });
+
     res.json({
       success: status === "success",
       transactionId,
+      status,
     });
   } catch (error) {
+    console.error("❌ Payment error:", error.response?.data || error.message);
     res.status(500).json({ success: false, message: "Payment failed" });
   }
 };

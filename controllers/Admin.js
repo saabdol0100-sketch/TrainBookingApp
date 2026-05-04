@@ -33,12 +33,29 @@ const send = (
 const generateTalgoSeats = (train, tripId, basePrice = 0) => {
   let seatNumber = 1;
   const seats = [];
-
-  const classPrices = {
+  // حدد زيادات السعر حسب نوع القطار
+  const typePriceMap = {
     VIP: basePrice + 200,
-    First: basePrice + 100,
-    Second: basePrice,
+    Spanish: basePrice + 150,
+    French: basePrice + 100,
+    Russian: basePrice + 50,
+    Talgo: basePrice,
   };
+
+  // لو النوع مش موجود في الماب، خليه السعر الأساسي
+  const seatPrice = typePriceMap[train.type] || basePrice;
+
+  for (let i = 1; i <= train.seats; i++) {
+    seats.push({
+      trip: tripId,
+      number: seatNumber++,
+      status: "available",
+      price: seatPrice, // السعر حسب نوع القطار
+      row: Math.ceil(i / 4),
+      position: i % 4 === 0 ? "aisle" : "window",
+      trainType: train.type,
+    });
+  }
 
   const pushSeat = (classType, row, position) => {
     seats.push({
@@ -184,7 +201,6 @@ exports.createStations = async (req, res) => {
     });
   }
 };
-
 exports.createStation = async (req, res) => {
   try {
     const { name, location, coordinates, status } = req.body;
@@ -357,7 +373,7 @@ exports.createTrips = async (req, res) => {
         toStation,
         departureDate,
         arrivalDate,
-        price = 0,
+        price,
       } = item;
 
       if (
@@ -365,9 +381,11 @@ exports.createTrips = async (req, res) => {
         !fromStation ||
         !toStation ||
         !departureDate ||
-        !arrivalDate
+        !arrivalDate ||
+        !price ||
+        price <= 0
       ) {
-        throw new Error("Missing required fields");
+        throw new Error("Missing required fields or invalid price");
       }
 
       const foundTrain = await Train.findById(train).session(session);
@@ -382,6 +400,12 @@ exports.createTrips = async (req, res) => {
 
       if (exists) throw new Error("Trip already exists");
 
+      // حساب مدة الرحلة
+      const durationMinutes = Math.floor(
+        (new Date(arrivalDate) - new Date(departureDate)) / 60000,
+      );
+      const duration = `${Math.floor(durationMinutes / 60)}h ${durationMinutes % 60}m`;
+
       const trip = await Trip.create(
         [
           {
@@ -391,12 +415,13 @@ exports.createTrips = async (req, res) => {
             departureDate,
             arrivalDate,
             price,
+            duration,
           },
         ],
         { session },
       );
 
-      // 🔥 generate seats
+      // 🔥 generate seats مع نوع القطار
       const seats = generateTalgoSeats(foundTrain, trip[0]._id, price);
 
       await Seat.insertMany(seats, { session });
@@ -404,6 +429,11 @@ exports.createTrips = async (req, res) => {
       createdTrips.push({
         trip: trip[0],
         seatsCreated: seats.length,
+        trainType: foundTrain.type,
+        seatPriceRange: {
+          min: Math.min(...seats.map((s) => s.price)),
+          max: Math.max(...seats.map((s) => s.price)),
+        },
       });
     }
 
@@ -412,7 +442,7 @@ exports.createTrips = async (req, res) => {
 
     return send(res, {
       success: true,
-      msg: "Trips created with Talgo seats",
+      msg: "Trips created with seats",
       count: createdTrips.length,
       data: createdTrips,
     });
@@ -432,23 +462,19 @@ exports.createTrip = async (req, res) => {
   session.startTransaction();
 
   try {
-    const {
-      train,
-      fromStation,
-      toStation,
-      departureDate,
-      arrivalDate,
-      price = 0,
-    } = req.body;
+    const { train, fromStation, toStation, departureDate, arrivalDate, price } =
+      req.body;
 
     if (
       !train ||
       !fromStation ||
       !toStation ||
       !departureDate ||
-      !arrivalDate
+      !arrivalDate ||
+      !price ||
+      price <= 0
     ) {
-      throw new Error("Missing required fields");
+      throw new Error("Missing required fields or invalid price");
     }
 
     if (
@@ -479,6 +505,12 @@ exports.createTrip = async (req, res) => {
 
     if (exists) throw new Error("Trip already exists");
 
+    // حساب مدة الرحلة
+    const durationMinutes = Math.floor(
+      (new Date(arrivalDate) - new Date(departureDate)) / 60000,
+    );
+    const duration = `${Math.floor(durationMinutes / 60)}h ${durationMinutes % 60}m`;
+
     const trip = await Trip.create(
       [
         {
@@ -488,12 +520,13 @@ exports.createTrip = async (req, res) => {
           departureDate,
           arrivalDate,
           price,
+          duration,
         },
       ],
       { session },
     );
 
-    // 🔥 generate seats
+    // 🔥 generate seats مع نوع القطار
     const seats = generateTalgoSeats(foundTrain, trip[0]._id, price);
 
     await Seat.insertMany(seats, { session });
@@ -503,9 +536,14 @@ exports.createTrip = async (req, res) => {
 
     return send(res, {
       success: true,
-      msg: "Trip created with Talgo seats",
+      msg: "Trip created with seats",
       data: trip[0],
       seatsCreated: seats.length,
+      trainType: foundTrain.type,
+      seatPriceRange: {
+        min: Math.min(...seats.map((s) => s.price)),
+        max: Math.max(...seats.map((s) => s.price)),
+      },
     });
   } catch (err) {
     await session.abortTransaction();
