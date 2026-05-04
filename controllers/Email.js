@@ -350,9 +350,11 @@ exports.forgotPassword = async (req, res) => {
     user.otpAttempts = 0;
 
     await user.save();
-
-    await sendEmail(user.email, "Reset OTP", `Your OTP code is: ${otp}`);
-
+    await sendEmail({
+      to: user.email,
+      subject: "Reset OTP",
+      text: `Your OTP code is: ${otp}`,
+    });
     return sendRes(res, 200, true, "OTP sent", {
       ...(process.env.NODE_ENV !== "production" && { otp }),
     });
