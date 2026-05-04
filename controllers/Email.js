@@ -85,11 +85,11 @@ exports.signupByAdmin = async (req, res) => {
       await user.save();
     }
 
-    await sendEmail(
-      normalizedEmail,
-      "Verify your account",
-      `Your OTP is: ${otp}`,
-    );
+    await sendEmail({
+      to: normalizedEmail,
+      subject: "Verify your account",
+      text: `OTP: ${otp}`,
+    });
 
     return sendRes(res, 200, true, "OTP sent successfully", {
       ...(process.env.NODE_ENV !== "production" && { otp }),
@@ -157,8 +157,11 @@ exports.signup = async (req, res) => {
       await user.save();
     }
 
-    await sendEmail(normalizedEmail, "Verify your account", `OTP: ${otp}`);
-
+    await sendEmail({
+      to: normalizedEmail,
+      subject: "Verify your account",
+      text: `OTP: ${otp}`,
+    });
     return sendRes(res, 200, true, "OTP sent", {
       ...(process.env.NODE_ENV !== "production" && { otp }),
     });
