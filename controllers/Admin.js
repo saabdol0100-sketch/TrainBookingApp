@@ -374,6 +374,7 @@ exports.createTrips = async (req, res) => {
         departureDate,
         arrivalDate,
         price,
+        stops, // ✅ إضافة stops
       } = item;
 
       if (
@@ -416,6 +417,7 @@ exports.createTrips = async (req, res) => {
             arrivalDate,
             price,
             duration,
+            stops: stops || [], // ✅ تخزين المحطات الوسيطة
           },
         ],
         { session },
@@ -457,13 +459,21 @@ exports.createTrips = async (req, res) => {
     });
   }
 };
+
 exports.createTrip = async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
 
   try {
-    const { train, fromStation, toStation, departureDate, arrivalDate, price } =
-      req.body;
+    const {
+      train,
+      fromStation,
+      toStation,
+      departureDate,
+      arrivalDate,
+      price,
+      stops,
+    } = req.body;
 
     if (
       !train ||
@@ -505,7 +515,6 @@ exports.createTrip = async (req, res) => {
 
     if (exists) throw new Error("Trip already exists");
 
-    // حساب مدة الرحلة
     const durationMinutes = Math.floor(
       (new Date(arrivalDate) - new Date(departureDate)) / 60000,
     );
@@ -521,14 +530,13 @@ exports.createTrip = async (req, res) => {
           arrivalDate,
           price,
           duration,
+          stops: stops || [], // ✅ هنا بيتخزن الـ stops
         },
       ],
       { session },
     );
 
-    // 🔥 generate seats مع نوع القطار
     const seats = generateTalgoSeats(foundTrain, trip[0]._id, price);
-
     await Seat.insertMany(seats, { session });
 
     await session.commitTransaction();
@@ -556,6 +564,7 @@ exports.createTrip = async (req, res) => {
     });
   }
 };
+
 exports.adminManageSeats = async (req, res) => {
   try {
     const { seats } = req.body;
