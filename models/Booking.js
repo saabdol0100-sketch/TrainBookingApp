@@ -31,10 +31,38 @@ const bookingSchema = new mongoose.Schema(
         name: { type: String, required: true },
         middleName: String,
         phone: String,
-        email: String,
+        email: {
+          type: String,
+          lowercase: true,
+          trim: true,
+        },
         nationalId: String,
         nationality: String,
         profileType: String,
+
+        // 🔗 IMPORTANT
+        seatId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "Seat",
+          required: true,
+          index: true,
+        },
+
+        // 🔥 cancellation system
+        cancelled: {
+          type: Boolean,
+          default: false,
+          index: true,
+        },
+
+        cancelledAt: {
+          type: Date,
+        },
+
+        cancelledBy: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "User",
+        },
       },
     ],
 
