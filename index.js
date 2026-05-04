@@ -16,7 +16,7 @@ const usersRoutes = require("./routes/Users");
 const emailRoutes = require("./routes/Email");
 const adminRoutes = require("./routes/Admin");
 const commissaryRoutes = require("./routes/Commissary");
-
+console.log("🔥 NEW VERSION RUNNING");
 const app = express();
 const API_PREFIX = "/api/v1";
 

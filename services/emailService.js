@@ -5,7 +5,7 @@ const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
     user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS, // ⚠️ must be App Password (not Gmail password)
+    pass: process.env.EMAIL_PASS, // ⚠️ App Password
   },
 });
 
@@ -17,7 +17,7 @@ const baseMailOptions = {
 // ----------------------
 // GENERIC EMAIL
 // ----------------------
-exports.sendEmail = async ({ to, subject, text, html, attachments = [] }) => {
+const sendEmail = async ({ to, subject, text, html, attachments = [] }) => {
   try {
     const info = await transporter.sendMail({
       ...baseMailOptions,
@@ -27,8 +27,10 @@ exports.sendEmail = async ({ to, subject, text, html, attachments = [] }) => {
       html,
       attachments,
     });
-    console.log("SENDING EMAIL TO:", to);
+
+    console.log("📨 Sending email to:", to);
     console.log("✅ Email sent:", info.response);
+
     return info;
   } catch (err) {
     console.error("❌ Email error:", err.message);
@@ -36,13 +38,11 @@ exports.sendEmail = async ({ to, subject, text, html, attachments = [] }) => {
   }
 };
 
-// ---
-
-// # ----------------------
-// # OTP EMAIL
-// # ----------------------
-exports.sendOTPEmail = async (to, otp) => {
-  return this.sendEmail({
+// ----------------------
+// OTP EMAIL
+// ----------------------
+const sendOTPEmail = async (to, otp) => {
+  return sendEmail({
     to,
     subject: "Verify your account",
     text: `Your OTP is: ${otp}`,
@@ -55,14 +55,12 @@ exports.sendOTPEmail = async (to, otp) => {
   });
 };
 
-// ---
-
-// # ----------------------
-// # TICKET EMAIL
-// # ----------------------
-exports.sendTicketEmail = async (to, data) => {
+// ----------------------
+// TICKET EMAIL
+// ----------------------
+const sendTicketEmail = async (to, data) => {
   const { userName, seatNumbers, passengers, totalPrice, qrCode } = data;
-  console.log("SENDING EMAIL TO:", to);
+
   const passengerRows = passengers
     .map(
       (p, i) => `
@@ -76,7 +74,8 @@ exports.sendTicketEmail = async (to, data) => {
       `,
     )
     .join("");
-  return this.sendEmail({
+
+  return sendEmail({
     to,
     subject: "🎟️ Your Train Ticket",
     text: `Your booking is confirmed. Seats: ${seatNumbers.join(", ")}`,
@@ -113,8 +112,17 @@ exports.sendTicketEmail = async (to, data) => {
     attachments: [
       {
         filename: "ticket-qr.png",
-        path: qrCode, // base64 QR
+        path: qrCode,
       },
     ],
   });
+};
+
+// ----------------------
+// EXPORTS
+// ----------------------
+module.exports = {
+  sendEmail,
+  sendOTPEmail,
+  sendTicketEmail,
 };
