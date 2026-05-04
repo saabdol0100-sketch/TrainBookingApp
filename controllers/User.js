@@ -373,7 +373,7 @@ exports.holdSeat = async (req, res) => {
 };
 exports.confirmPayment = async (req, res) => {
   const session = await mongoose.startSession();
-  let committed = false; // 🔥 track commit state
+  let committed = false;
 
   const SKIP_PAYMENT = process.env.SKIP_PAYMENT === "true";
 
@@ -409,7 +409,7 @@ exports.confirmPayment = async (req, res) => {
 
     const now = new Date();
 
-    // 🚨 prevent replay attack (ONLY real mode)
+    // 🚨 prevent replay attack
     if (!SKIP_PAYMENT) {
       const existingBooking = await Booking.findOne({ transactionId }).session(
         session,
@@ -432,7 +432,7 @@ exports.confirmPayment = async (req, res) => {
       throw new Error("Seats must belong to same trip");
     }
 
-    // 🔥 FLEXIBLE VALIDATION
+    // 🔥 VALIDATION (availability)
     for (const s of seats) {
       if (s.status === "booked") {
         throw new Error(`Seat ${s.seatNumber} already booked`);
@@ -481,7 +481,7 @@ exports.confirmPayment = async (req, res) => {
       console.log("⚠️ TEST MODE: Payment skipped");
     }
 
-    // 🔥 ATOMIC UPDATE (CORE LOGIC)
+    // 🔥 ATOMIC UPDATE (BOOK SEATS)
     const updated = await Seat.updateMany(
       {
         _id: { $in: seatIds },
@@ -509,7 +509,7 @@ exports.confirmPayment = async (req, res) => {
       throw new Error("Some seats are no longer available");
     }
 
-    // 🎟️ CREATE BOOKING
+    // 🎟️ CREATE BOOKING (🔥 FIXED PART HERE)
     const [booking] = await Booking.create(
       [
         {
@@ -517,15 +517,24 @@ exports.confirmPayment = async (req, res) => {
           trip: tripId,
           seats: seatIds,
 
-          passengers: passengers.map((p, i) => ({
-            name: p.name,
-            age: p.age || null,
-            gender: p.gender || null,
-            nationalId: p.nationalId || null,
-            phone: p.phone || null,
-            email: p.email || null,
-            seatId: seatIds[i],
-          })),
+          passengers: passengers.map((p, i) => {
+            const seatId = seatIds[i];
+
+            if (!mongoose.Types.ObjectId.isValid(seatId)) {
+              throw new Error("Invalid seat mapping");
+            }
+
+            return {
+              name: p.name,
+              age: p.age || null,
+              gender: p.gender || null,
+              nationalId: p.nationalId || null,
+              phone: p.phone || null,
+              email: p.email?.toLowerCase().trim() || null,
+
+              seatId, // 🔥 أهم إضافة
+            };
+          }),
 
           paymentStatus: "paid",
           transactionId,
@@ -555,10 +564,8 @@ exports.confirmPayment = async (req, res) => {
     // ✅ COMMIT
     await session.commitTransaction();
     committed = true;
-    console.log("USER OBJECT:", req.user);
-    console.log("EMAIL VALUE:", req.user?.email);
-    // 📧 EMAIL AFTER COMMIT
-    // 📨 collect emails
+
+    // 📧 EMAIL
     const emails = passengers
       .map((p) => p.email)
       .filter((email) => email && email.trim() !== "");
@@ -567,10 +574,7 @@ exports.confirmPayment = async (req, res) => {
       emails.push(req.user.email);
     }
 
-    // 🚨 safety check
-    if (emails.length === 0) {
-      console.warn("⚠️ No email recipients found — skipping email");
-    } else {
+    if (emails.length > 0) {
       try {
         await sendTicketEmail(emails.join(","), {
           userName: req.user?.name || "Passenger",
@@ -583,6 +587,7 @@ exports.confirmPayment = async (req, res) => {
         console.error("❌ Email failed:", emailErr.message);
       }
     }
+
     return sendRes(res, 200, true, "Booking confirmed", {
       booking: {
         id: booking._id,
@@ -593,7 +598,6 @@ exports.confirmPayment = async (req, res) => {
       },
     });
   } catch (err) {
-    // ❌ abort ONLY if not committed
     if (!committed) {
       await session.abortTransaction();
     }
@@ -602,7 +606,7 @@ exports.confirmPayment = async (req, res) => {
 
     return sendRes(res, 500, false, err.message);
   } finally {
-    session.endSession(); // 🔥 ALWAYS end session
+    session.endSession();
   }
 };
 exports.getMyBooks = async (req, res) => {
@@ -727,7 +731,7 @@ exports.cancelBooking = async (req, res) => {
     const userId = req.user.id;
     const userEmail = req.user.email?.toLowerCase();
 
-    // 🔴 validate id
+    // 🔴 validate booking id
     if (!mongoose.Types.ObjectId.isValid(id)) {
       throw new Error("Invalid booking id");
     }
@@ -755,7 +759,7 @@ exports.cancelBooking = async (req, res) => {
         throw new Error("Booking already cancelled");
       }
 
-      // 🎯 release all booked seats
+      // 🎯 release ALL seats
       const updated = await Seat.updateMany(
         {
           _id: { $in: booking.seats },
@@ -773,7 +777,7 @@ exports.cancelBooking = async (req, res) => {
       );
 
       if (updated.modifiedCount === 0) {
-        throw new Error("Seats already released or invalid");
+        console.warn("⚠️ No seats were updated (already free?)");
       }
 
       // 💰 refund
@@ -782,11 +786,10 @@ exports.cancelBooking = async (req, res) => {
         booking.refundedAt = now;
       }
 
-      // 🔥 mark booking cancelled
       booking.status = "cancelled";
       booking.cancelledAt = now;
 
-      // 🔥 mark all passengers cancelled (soft delete)
+      // 🔥 soft delete all passengers
       booking.passengers.forEach((p) => {
         if (!p.cancelled) {
           p.cancelled = true;
@@ -807,22 +810,25 @@ exports.cancelBooking = async (req, res) => {
     // 👥 PASSENGER → PARTIAL CANCEL
     // =========================================================
 
-    const passenger = booking.passengers.find(
+    const passengerIndex = booking.passengers.findIndex(
       (p) => p.email?.toLowerCase() === userEmail,
     );
 
-    if (!passenger) {
+    if (passengerIndex === -1) {
       throw new Error("Not authorized");
     }
 
-    // ❌ already cancelled
+    const passenger = booking.passengers[passengerIndex];
+
     if (passenger.cancelled) {
       throw new Error("Passenger already cancelled");
     }
 
-    // ⚠️ حالة seatId مش موجود
-    if (!passenger.seatId) {
-      console.warn("⚠️ Passenger بدون seatId → cancel بدون seat release");
+    // 🔥🔥🔥 SMART FALLBACK
+    const seatId = passenger.seatId || booking.seats?.[passengerIndex];
+
+    if (!seatId || !mongoose.Types.ObjectId.isValid(seatId)) {
+      console.warn("⚠️ No valid seatId → cancel without releasing seat");
 
       passenger.cancelled = true;
       passenger.cancelledAt = now;
@@ -831,7 +837,7 @@ exports.cancelBooking = async (req, res) => {
       // 🎯 release ONLY his seat
       const seatUpdate = await Seat.updateOne(
         {
-          _id: passenger.seatId,
+          _id: seatId,
           status: "booked",
         },
         {
@@ -846,7 +852,7 @@ exports.cancelBooking = async (req, res) => {
       );
 
       if (seatUpdate.modifiedCount === 0) {
-        throw new Error("Seat already released or invalid");
+        console.warn("⚠️ Seat already free or mismatch");
       }
 
       // ✅ soft delete passenger
@@ -855,9 +861,10 @@ exports.cancelBooking = async (req, res) => {
       passenger.cancelledBy = userId;
     }
 
-    // 🔥 check if all passengers cancelled
+    // 🔥 check remaining passengers
     const activePassengers = booking.passengers.filter((p) => !p.cancelled);
 
+    // 🔥 لو كل الركاب اتلغوا → الغي الحجز كله
     if (activePassengers.length === 0) {
       booking.status = "cancelled";
 
