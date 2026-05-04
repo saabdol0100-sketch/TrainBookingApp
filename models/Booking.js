@@ -44,7 +44,9 @@ const bookingSchema = new mongoose.Schema(
         seatId: {
           type: mongoose.Schema.Types.ObjectId,
           ref: "Seat",
-          required: true,
+          required: function () {
+            return !this.cancelled; // ✅ مطلوب بس لو مش cancelled
+          },
           index: true,
         },
 
