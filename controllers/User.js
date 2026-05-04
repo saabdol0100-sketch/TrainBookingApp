@@ -609,10 +609,26 @@ exports.getMyBooks = async (req, res) => {
   try {
     const { page = 1, limit = 10 } = req.query;
 
-    const pageNum = Number(page);
-    const limitNum = Number(limit);
+    const pageNum = Math.max(Number(page), 1);
+    const limitNum = Math.min(Math.max(Number(limit), 1), 50); // 🔥 max limit حماية
 
-    const bookings = await Booking.find({ user: req.user.id })
+    // 🔥 SAFE FILTER BUILD
+    const conditions = [{ user: req.user.id }];
+
+    if (req.user.email) {
+      conditions.push({
+        passengers: {
+          $elemMatch: {
+            email: req.user.email.toLowerCase().trim(),
+          },
+        },
+      });
+    }
+
+    const filter = { $or: conditions };
+
+    // 🔎 FETCH
+    const bookings = await Booking.find(filter)
       .populate({
         path: "trip",
         select: "departureDate arrivalDate",
@@ -631,39 +647,61 @@ exports.getMyBooks = async (req, res) => {
       .limit(limitNum)
       .lean();
 
-    const total = await Booking.countDocuments({ user: req.user.id });
+    const total = await Booking.countDocuments(filter);
 
+    // 🕒 format helper
     const formatTime = (d) =>
       new Date(d).toLocaleTimeString("en-US", {
         hour: "2-digit",
         minute: "2-digit",
       });
 
-    const formatted = bookings.map((b) => ({
-      bookingId: b._id,
-      tripId: b.trip?._id,
-      trainNumber: b.trip?.train?.number,
-      trainType: b.trip?.train?.type,
-      from: b.trip?.fromStation?.name,
-      to: b.trip?.toStation?.name,
-      departureTime: formatTime(b.trip?.departureDate),
-      arrivalTime: formatTime(b.trip?.arrivalDate),
+    // 🎯 RESPONSE FORMAT
+    const formatted = bookings.map((b) => {
+      const isOwner = b.user?.toString() === req.user.id;
+      const userEmail = req.user.email?.toLowerCase();
 
-      // ✅ seats بشكل أوضح
-      seats: (b.seats || []).map((s) => ({
-        id: s._id,
-        number: s.seatNumber,
-        class: s.class,
-        coach: s.coach,
-        price: s.price,
-        status: s.status,
-      })),
+      // 🔥 لو مش owner → نفلتر passenger
+      let passengers = b.passengers || [];
 
-      passengers: b.passengers,
-      totalSeats: b.seats?.length || 0,
-      paymentStatus: b.paymentStatus,
-      bookedAt: b.createdAt,
-    }));
+      if (!isOwner && userEmail) {
+        passengers = passengers.filter(
+          (p) => p.email && p.email.toLowerCase() === userEmail,
+        );
+      }
+
+      return {
+        bookingId: b._id,
+        tripId: b.trip?._id,
+
+        trainNumber: b.trip?.train?.number,
+        trainType: b.trip?.train?.type,
+
+        from: b.trip?.fromStation?.name,
+        to: b.trip?.toStation?.name,
+
+        departureTime: formatTime(b.trip?.departureDate),
+        arrivalTime: formatTime(b.trip?.arrivalDate),
+
+        seats: (b.seats || []).map((s) => ({
+          id: s._id,
+          number: s.seatNumber,
+          class: s.class,
+          coach: s.coach,
+          price: s.price,
+          status: s.status,
+        })),
+
+        passengers,
+        totalSeats: b.seats?.length || 0,
+
+        paymentStatus: b.paymentStatus,
+        bookedAt: b.createdAt,
+
+        // 🔥 helpful flag
+        isOwner,
+      };
+    });
 
     return sendRes(res, 200, true, "Bookings fetched", {
       bookings: formatted,
