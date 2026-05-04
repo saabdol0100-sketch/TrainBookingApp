@@ -33,40 +33,38 @@ const send = (
 const generateTalgoSeats = (train, tripId, basePrice = 0) => {
   let seatNumber = 1;
   const seats = [];
-  // حدد زيادات السعر حسب نوع القطار
-  const typePriceMap = {
+
+  // زيادات السعر حسب نوع القطار أو الكلاس
+  const priceMap = {
     VIP: basePrice + 200,
     Spanish: basePrice + 150,
     French: basePrice + 100,
     Russian: basePrice + 50,
     Talgo: basePrice,
+    First: basePrice + 100,
+    Second: basePrice,
   };
 
-  // لو النوع مش موجود في الماب، خليه السعر الأساسي
-  const seatPrice = typePriceMap[train.type] || basePrice;
-
-  for (let i = 1; i <= train.seats; i++) {
-    seats.push({
-      trip: tripId,
-      number: seatNumber++,
-      status: "available",
-      price: seatPrice, // السعر حسب نوع القطار
-      row: Math.ceil(i / 4),
-      position: i % 4 === 0 ? "aisle" : "window",
-      trainType: train.type,
-    });
-  }
-
+  // دالة مساعدة لإضافة كرسي
   const pushSeat = (classType, row, position) => {
     seats.push({
       trip: tripId,
-      seatNumber: seatNumber++,
+      number: seatNumber++,
       classType,
-      price: classPrices[classType] || basePrice,
+      status: "available",
+      price: priceMap[classType] || basePrice,
       row,
       position,
+      trainType: train.type,
     });
   };
+
+  // ✅ توليد المقاعد الأساسية حسب العدد الكلي للقطار
+  if (train.seats && train.seats > 0) {
+    for (let i = 1; i <= train.seats; i++) {
+      pushSeat(train.type, Math.ceil(i / 4), i % 4 === 0 ? "aisle" : "window");
+    }
+  }
 
   // =====================
   // SECOND CLASS (Talgo 2-2 zigzag)
@@ -78,7 +76,6 @@ const generateTalgoSeats = (train, tripId, basePrice = 0) => {
 
     while (created < total) {
       const isReversed = row % 2 === 0;
-
       const layout = isReversed
         ? ["window", "aisle", "aisle", "window"].reverse()
         : ["window", "aisle", "aisle", "window"];
@@ -88,7 +85,6 @@ const generateTalgoSeats = (train, tripId, basePrice = 0) => {
         pushSeat("Second", row, pos);
         created++;
       }
-
       row++;
     }
   }
@@ -103,13 +99,11 @@ const generateTalgoSeats = (train, tripId, basePrice = 0) => {
 
     while (created < total) {
       const layout = ["window", "aisle", "window"];
-
       for (let pos of layout) {
         if (created >= total) break;
         pushSeat("First", row, pos);
         created++;
       }
-
       row++;
     }
   }
@@ -119,7 +113,6 @@ const generateTalgoSeats = (train, tripId, basePrice = 0) => {
   // =====================
   if (train.classes?.VIP) {
     const total = train.classes.VIP;
-
     for (let i = 0; i < total; i++) {
       pushSeat("VIP", Math.floor(i / 2) + 1, i % 2 === 0 ? "window" : "aisle");
     }
