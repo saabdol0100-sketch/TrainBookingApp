@@ -727,6 +727,7 @@ exports.cancelBooking = async (req, res) => {
     const userId = req.user.id;
     const userEmail = req.user.email?.toLowerCase();
 
+    // 🔴 validate id
     if (!mongoose.Types.ObjectId.isValid(id)) {
       throw new Error("Invalid booking id");
     }
@@ -754,6 +755,7 @@ exports.cancelBooking = async (req, res) => {
         throw new Error("Booking already cancelled");
       }
 
+      // 🎯 release all booked seats
       const updated = await Seat.updateMany(
         {
           _id: { $in: booking.seats },
@@ -780,10 +782,11 @@ exports.cancelBooking = async (req, res) => {
         booking.refundedAt = now;
       }
 
+      // 🔥 mark booking cancelled
       booking.status = "cancelled";
       booking.cancelledAt = now;
 
-      // 🔥 mark all passengers cancelled
+      // 🔥 mark all passengers cancelled (soft delete)
       booking.passengers.forEach((p) => {
         if (!p.cancelled) {
           p.cancelled = true;
@@ -812,39 +815,45 @@ exports.cancelBooking = async (req, res) => {
       throw new Error("Not authorized");
     }
 
+    // ❌ already cancelled
     if (passenger.cancelled) {
       throw new Error("Passenger already cancelled");
     }
 
+    // ⚠️ حالة seatId مش موجود
     if (!passenger.seatId) {
-      throw new Error("Passenger has no seat assigned");
-    }
+      console.warn("⚠️ Passenger بدون seatId → cancel بدون seat release");
 
-    // 🎯 release ONLY his seat
-    const seatUpdate = await Seat.updateOne(
-      {
-        _id: passenger.seatId,
-        status: "booked",
-      },
-      {
-        $set: {
-          status: "available",
-          reservedBy: null,
-          expireAt: null,
-          bookedAt: null,
+      passenger.cancelled = true;
+      passenger.cancelledAt = now;
+      passenger.cancelledBy = userId;
+    } else {
+      // 🎯 release ONLY his seat
+      const seatUpdate = await Seat.updateOne(
+        {
+          _id: passenger.seatId,
+          status: "booked",
         },
-      },
-      { session },
-    );
+        {
+          $set: {
+            status: "available",
+            reservedBy: null,
+            expireAt: null,
+            bookedAt: null,
+          },
+        },
+        { session },
+      );
 
-    if (seatUpdate.modifiedCount === 0) {
-      throw new Error("Seat already released or invalid");
+      if (seatUpdate.modifiedCount === 0) {
+        throw new Error("Seat already released or invalid");
+      }
+
+      // ✅ soft delete passenger
+      passenger.cancelled = true;
+      passenger.cancelledAt = now;
+      passenger.cancelledBy = userId;
     }
-
-    // ✅ SOFT DELETE passenger
-    passenger.cancelled = true;
-    passenger.cancelledAt = now;
-    passenger.cancelledBy = userId;
 
     // 🔥 check if all passengers cancelled
     const activePassengers = booking.passengers.filter((p) => !p.cancelled);
@@ -872,12 +881,12 @@ exports.cancelBooking = async (req, res) => {
     }
 
     console.error("cancelBooking:", err);
+
     return sendRes(res, 500, false, err.message);
   } finally {
     session.endSession();
   }
 };
-
 //! 7 Methods :
 //?----------------
 //todo searchTrips
