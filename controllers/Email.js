@@ -204,8 +204,11 @@ exports.resendOTP = async (req, res) => {
 
     await user.save();
 
-    await sendEmail(user.email, "OTP Code", `Your OTP is: ${otp}`);
-
+    await sendEmail({
+      to: user.email,
+      subject: "OTP Code",
+      text: `Your OTP is: ${otp}`,
+    });
     return sendRes(res, 200, true, "OTP resent", {
       ...(process.env.NODE_ENV !== "production" && { otp }),
     });
